@@ -1,0 +1,129 @@
+name: Build Selected Module
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "Module folder"
+        required: true
+        type: choice
+        options:
+          - Complaint_service_hub
+          - InSightec_Service_hub
+          - Log_explorer
+          - Water_system_analyzer
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+
+    - name: Upgrade pip
+      run: python -m pip install --upgrade pip
+
+    - name: Extract Latest ZIP and Detect Build BAT
+      shell: powershell
+      run: |
+
+        $ErrorActionPreference="Stop"
+
+        $module="${{ github.event.inputs.module }}"
+
+        $modulePath="Module/$module"
+
+        $work="$modulePath/work"
+
+        if(!(Test-Path $modulePath)){
+            throw "Module not found : $modulePath"
+        }
+
+        $zips=Get-ChildItem $modulePath -Recurse -Filter *.zip |
+            Where-Object{$_.FullName -notmatch "\\work\\"} |
+            Sort-Object LastWriteTime -Descending
+
+        if($zips.Count -eq 0){
+            throw "No zip found."
+        }
+
+        $zip=$zips[0]
+
+        Write-Host ""
+        Write-Host "=================================="
+        Write-Host "Module : $module"
+        Write-Host "ZIP    : $($zip.Name)"
+        Write-Host "=================================="
+
+        if(Test-Path $work){
+            Remove-Item $work -Recurse -Force
+        }
+
+        New-Item -ItemType Directory -Force -Path $work | Out-Null
+
+        Expand-Archive $zip.FullName $work -Force
+
+        $bat=Get-ChildItem $work -Recurse -Filter *.bat |
+            Where-Object{
+                $_.Name -match "BUILD" -or
+                $_.Name -match "build" -or
+                $_.Name -match "^01_"
+            } |
+            Select-Object -First 1
+
+        if($null -eq $bat){
+            throw "No build bat found."
+        }
+
+        "BUILD_PATH=$($bat.DirectoryName)" | Out-File $env:GITHUB_ENV -Append
+
+        "BUILD_BAT=$($bat.Name)" | Out-File $env:GITHUB_ENV -Append
+
+        Write-Host ""
+        Write-Host "BAT : $($bat.FullName)"
+        Write-Host ""
+
+    - name: Install requirements
+      shell: cmd
+      run: |
+
+        cd /d "%BUILD_PATH%"
+
+        if exist requirements.txt (
+            pip install -r requirements.txt
+        )
+
+        pip install pyinstaller nuitka ordered-set zstandard
+
+    - name: Run Build BAT
+      shell: cmd
+      run: |
+
+        cd /d "%BUILD_PATH%"
+
+        echo Running %BUILD_BAT%
+
+        call "%BUILD_BAT%"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ github.event.inputs.module }}
+
+        path: |
+          Module/${{ github.event.inputs.module }}/work/**/*.exe
+          Module/${{ github.event.inputs.module }}/work/**/*.zip
+          Module/${{ github.event.inputs.module }}/work/**/dist/**
+          Module/${{ github.event.inputs.module }}/work/**/release/**
+          Module/${{ github.event.inputs.module }}/work/**/output/**
+          Module/${{ github.event.inputs.module }}/work/**/build/**
+
+        if-no-files-found: ignore
+
