@@ -1,0 +1,202 @@
+name: Build Auto Modules
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "Module folder name, or ALL"
+        required: true
+        default: "ALL"
+
+jobs:
+  discover:
+    runs-on: windows-latest
+    outputs:
+      modules: ${{ steps.scan.outputs.modules }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Scan Module Folders
+        id: scan
+        shell: powershell
+        run: |
+          $inputModule = "${{ github.event.inputs.module }}"
+          $root = "Module"
+
+          if (!(Test-Path $root)) {
+            throw "Module folder not found."
+          }
+
+          if ($inputModule -eq "ALL") {
+            $mods = Get-ChildItem $root -Directory | ForEach-Object { $_.Name }
+          } else {
+            $target = Join-Path $root $inputModule
+            if (!(Test-Path $target)) {
+              throw "Selected module not found: $inputModule"
+            }
+            $mods = @($inputModule)
+          }
+
+          $json = $mods | ConvertTo-Json -Compress
+          echo "modules=$json" >> $env:GITHUB_OUTPUT
+
+  build:
+    needs: discover
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.discover.outputs.modules) }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Upgrade pip
+        shell: cmd
+        run: python -m pip install --upgrade pip
+
+      - name: Extract Latest ZIP and Detect Build Method
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $module = "${{ matrix.module }}"
+          $modulePath = "Module/$module"
+          $work = "$modulePath/work"
+          $envFile = $env:GITHUB_ENV
+
+          Write-Host "======================================"
+          Write-Host "Module: $module"
+          Write-Host "======================================"
+
+          $zips = Get-ChildItem -Path $modulePath -Recurse -Filter *.zip |
+            Where-Object { $_.FullName -notmatch "\\work\\" } |
+            Sort-Object LastWriteTime -Descending
+
+          if ($zips.Count -eq 0) {
+            throw "No ZIP found in $modulePath"
+          }
+
+          $zip = $zips[0]
+
+          Write-Host "Using ZIP:"
+          Write-Host $zip.FullName
+
+          if (Test-Path $work) {
+            Remove-Item $work -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath $work -Force
+
+          $bat = Get-ChildItem $work -Recurse -Filter *.bat |
+            Where-Object {
+              $_.Name -match "(?i)build" -or
+              $_.Name -match "(?i)exe" -or
+              $_.Name -match "^01_"
+            } |
+            Select-Object -First 1
+
+          if ($bat) {
+            "BUILD_MODE=BAT" | Out-File $envFile -Append -Encoding utf8
+            "BUILD_PATH=$($bat.DirectoryName)" | Out-File $envFile -Append -Encoding utf8
+            "BUILD_FILE=$($bat.Name)" | Out-File $envFile -Append -Encoding utf8
+            exit 0
+          }
+
+          $spec = Get-ChildItem $work -Recurse -Filter *.spec | Select-Object -First 1
+          if ($spec) {
+            "BUILD_MODE=SPEC" | Out-File $envFile -Append -Encoding utf8
+            "BUILD_PATH=$($spec.DirectoryName)" | Out-File $envFile -Append -Encoding utf8
+            "BUILD_FILE=$($spec.Name)" | Out-File $envFile -Append -Encoding utf8
+            exit 0
+          }
+
+          $pyproject = Get-ChildItem $work -Recurse -Filter pyproject.toml | Select-Object -First 1
+          if ($pyproject) {
+            "BUILD_MODE=PYPROJECT" | Out-File $envFile -Append -Encoding utf8
+            "BUILD_PATH=$($pyproject.DirectoryName)" | Out-File $envFile -Append -Encoding utf8
+            "BUILD_FILE=pyproject.toml" | Out-File $envFile -Append -Encoding utf8
+            exit 0
+          }
+
+          throw "No BAT, SPEC, or pyproject.toml found."
+
+      - name: Install requirements
+        shell: cmd
+        run: |
+          cd /d "%BUILD_PATH%"
+
+          if exist requirements.txt (
+            pip install -r requirements.txt
+          )
+
+          pip install pyinstaller nuitka ordered-set zstandard PySide6
+
+      - name: Build
+        shell: cmd
+        run: |
+          cd /d "%BUILD_PATH%"
+
+          echo BUILD_MODE=%BUILD_MODE%
+          echo BUILD_FILE=%BUILD_FILE%
+
+          if "%BUILD_MODE%"=="BAT" (
+            call "%BUILD_FILE%"
+          )
+
+          if "%BUILD_MODE%"=="SPEC" (
+            pyinstaller "%BUILD_FILE%"
+          )
+
+          if "%BUILD_MODE%"=="PYPROJECT" (
+            pip install .
+          )
+
+      - name: Create Distribution ZIP
+        shell: powershell
+        run: |
+          $module = "${{ matrix.module }}"
+          $work = "Module/$module/work"
+          $out = "Module/$module/artifact"
+          $zipOut = "$out/${module}_distribution.zip"
+
+          if (Test-Path $out) {
+            Remove-Item $out -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $targets = @(
+            "$work/**/*.exe",
+            "$work/**/dist/**",
+            "$work/**/release/**",
+            "$work/**/output/**",
+            "$work/**/build/**"
+          )
+
+          foreach ($target in $targets) {
+            Get-ChildItem -Path $target -ErrorAction SilentlyContinue | ForEach-Object {
+              Copy-Item $_.FullName -Destination $out -Recurse -Force
+            }
+          }
+
+          Compress-Archive -Path "$out/*" -DestinationPath $zipOut -Force
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.module }}_distribution
+          path: |
+            Module/${{ matrix.module }}/artifact/*.zip
+          if-no-files-found: error
+
