@@ -1,0 +1,102 @@
+name: Build All Modules Latest ZIP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - Complaint_service_hub
+          - InSightec_Service_hub
+          - Log_explorer
+          - Water_system_analyzer
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Upgrade pip
+        shell: cmd
+        run: python -m pip install --upgrade pip
+
+      - name: Extract Latest ZIP
+        shell: powershell
+        run: |
+          $module = "${{ matrix.module }}"
+          $modulePath = "Module/$module"
+          $work = "$modulePath/work"
+
+          if (!(Test-Path $modulePath)) {
+            Write-Error "Module folder not found: $modulePath"
+            exit 1
+          }
+
+          $zips = Get-ChildItem -Path $modulePath -Filter *.zip | Sort-Object LastWriteTime -Descending
+
+          if ($zips.Count -eq 0) {
+            Write-Error "No ZIP file found in: $modulePath"
+            exit 1
+          }
+
+          Write-Host "======================================"
+          Write-Host "Module: $module"
+          Write-Host "Found ZIP files:"
+          $zips | ForEach-Object { Write-Host $_.Name }
+          Write-Host "Using latest ZIP:"
+          Write-Host $zips[0].Name
+          Write-Host "======================================"
+
+          if (Test-Path $work) {
+            Remove-Item $work -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          Expand-Archive -Path $zips[0].FullName -DestinationPath $work -Force
+
+      - name: Install requirements
+        shell: cmd
+        run: |
+          cd Module\${{ matrix.module }}\work
+
+          if exist requirements.txt (
+            pip install -r requirements.txt
+          )
+
+          pip install pyinstaller nuitka ordered-set zstandard
+
+      - name: Run Build BAT
+        shell: cmd
+        run: |
+          cd Module\${{ matrix.module }}\work
+
+          if exist 01_BUILD_EXE_NUITKA.bat (
+            call 01_BUILD_EXE_NUITKA.bat
+          ) else if exist 01_BUILD_EXE_PYINSTALLER.bat (
+            call 01_BUILD_EXE_PYINSTALLER.bat
+          ) else (
+            echo No build BAT found.
+            dir
+            exit /b 1
+          )
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.module }}_build
+          path: |
+            Module/${{ matrix.module }}/work/dist/**
+            Module/${{ matrix.module }}/work/*.zip
+            Module/${{ matrix.module }}/work/release/**
+            Module/${{ matrix.module }}/work/output/**
+          if-no-files-found: ignore
+
