@@ -29,12 +29,13 @@ jobs:
         shell: cmd
         run: python -m pip install --upgrade pip
 
-      - name: Extract Latest ZIP
+      - name: Extract Latest ZIP and Detect Build Path
         shell: powershell
         run: |
           $module = "${{ matrix.module }}"
           $modulePath = "Module/$module"
           $work = "$modulePath/work"
+          $envFile = $env:GITHUB_ENV
 
           if (!(Test-Path $modulePath)) {
             Write-Error "Module folder not found: $modulePath"
@@ -63,10 +64,35 @@ jobs:
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           Expand-Archive -Path $zips[0].FullName -DestinationPath $work -Force
 
+          $batFiles = Get-ChildItem -Path $work -Recurse -Filter "*.bat" |
+            Where-Object {
+              $_.Name -like "*BUILD*EXE*.bat" -or
+              $_.Name -like "*BUILD*.bat" -or
+              $_.Name -like "01_*.bat"
+            } |
+            Sort-Object FullName
+
+          if ($batFiles.Count -eq 0) {
+            Write-Error "No build BAT found under extracted ZIP."
+            Get-ChildItem -Path $work -Recurse
+            exit 1
+          }
+
+          $buildBat = $batFiles[0]
+          $buildPath = $buildBat.DirectoryName
+
+          Write-Host "Detected build BAT:"
+          Write-Host $buildBat.FullName
+          Write-Host "Detected build path:"
+          Write-Host $buildPath
+
+          "BUILD_PATH=$buildPath" | Out-File -FilePath $envFile -Append -Encoding utf8
+          "BUILD_BAT=$($buildBat.Name)" | Out-File -FilePath $envFile -Append -Encoding utf8
+
       - name: Install requirements
         shell: cmd
         run: |
-          cd Module\${{ matrix.module }}\work
+          cd /d "%BUILD_PATH%"
 
           if exist requirements.txt (
             pip install -r requirements.txt
@@ -77,26 +103,18 @@ jobs:
       - name: Run Build BAT
         shell: cmd
         run: |
-          cd Module\${{ matrix.module }}\work
-
-          if exist 01_BUILD_EXE_NUITKA.bat (
-            call 01_BUILD_EXE_NUITKA.bat
-          ) else if exist 01_BUILD_EXE_PYINSTALLER.bat (
-            call 01_BUILD_EXE_PYINSTALLER.bat
-          ) else (
-            echo No build BAT found.
-            dir
-            exit /b 1
-          )
+          cd /d "%BUILD_PATH%"
+          call "%BUILD_BAT%"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.module }}_build
           path: |
-            Module/${{ matrix.module }}/work/dist/**
-            Module/${{ matrix.module }}/work/*.zip
-            Module/${{ matrix.module }}/work/release/**
-            Module/${{ matrix.module }}/work/output/**
+            Module/${{ matrix.module }}/work/**/*.exe
+            Module/${{ matrix.module }}/work/**/*.zip
+            Module/${{ matrix.module }}/work/**/dist/**
+            Module/${{ matrix.module }}/work/**/release/**
+            Module/${{ matrix.module }}/work/**/output/**
           if-no-files-found: ignore
 
