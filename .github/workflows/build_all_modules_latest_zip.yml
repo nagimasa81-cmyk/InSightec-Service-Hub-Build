@@ -39,15 +39,8 @@ jobs:
           $work = "$modulePath/work"
           $envFile = $env:GITHUB_ENV
 
-          Write-Host "======================================"
-          Write-Host "Module: $module"
-          Write-Host "Module Path: $modulePath"
-          Write-Host "Work Path: $work"
-          Write-Host "======================================"
-
           if (!(Test-Path $modulePath)) {
-            Write-Error "Module folder not found: $modulePath"
-            exit 1
+            throw "Module folder not found: $modulePath"
           }
 
           $zips = Get-ChildItem -Path $modulePath -Recurse -Filter *.zip |
@@ -58,20 +51,14 @@ jobs:
             Sort-Object LastWriteTime -Descending
 
           if ($zips.Count -eq 0) {
-            Write-Error "No ZIP file found under: $modulePath"
-            exit 1
-          }
-
-          Write-Host "Found ZIP files:"
-          $zips | ForEach-Object {
-            Write-Host (" - " + $_.FullName)
+            throw "No ZIP file found under: $modulePath"
           }
 
           $latestZip = $zips[0]
 
           Write-Host "======================================"
-          Write-Host "Using latest ZIP:"
-          Write-Host $latestZip.FullName
+          Write-Host "Module : $module"
+          Write-Host "ZIP    : $($latestZip.FullName)"
           Write-Host "======================================"
 
           if (Test-Path $work) {
@@ -81,8 +68,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           Expand-Archive -Path $latestZip.FullName -DestinationPath $work -Force
 
-          Write-Host "Extracted files:"
-          Get-ChildItem -Path $work -Recurse | Select-Object FullName | Format-Table -AutoSize
+          Write-Host "Extracted BAT files:"
+          Get-ChildItem -Path $work -Recurse -Filter *.bat | ForEach-Object {
+            Write-Host $_.FullName
+          }
 
           $batFiles = Get-ChildItem -Path $work -Recurse -Filter *.bat |
             Where-Object {
@@ -93,22 +82,15 @@ jobs:
             Sort-Object FullName
 
           if ($batFiles.Count -eq 0) {
-            Write-Error "No build BAT found under extracted ZIP."
-            Write-Host "All BAT files found:"
-            Get-ChildItem -Path $work -Recurse -Filter *.bat | ForEach-Object {
-              Write-Host $_.FullName
-            }
-            exit 1
+            throw "No build BAT found."
           }
 
           $buildBat = $batFiles[0]
           $buildPath = $buildBat.DirectoryName
 
           Write-Host "======================================"
-          Write-Host "Detected Build BAT:"
-          Write-Host $buildBat.FullName
-          Write-Host "Detected Build Path:"
-          Write-Host $buildPath
+          Write-Host "Build BAT  : $($buildBat.FullName)"
+          Write-Host "Build Path : $buildPath"
           Write-Host "======================================"
 
           "BUILD_PATH=$buildPath" | Out-File -FilePath $envFile -Append -Encoding utf8
