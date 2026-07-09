@@ -24,7 +24,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python --version
+          python-version: "3.13"
 
       - name: Upgrade pip
         shell: cmd
