@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       module:
-        description: "Module folder name under modules/"
+        description: "Module folder name under module/"
         required: true
-        default: "Complaint_Service_Hub"
+        default: "Complaint_service_hub"
 
 jobs:
   build:
