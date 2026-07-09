@@ -31,7 +31,7 @@ jobs:
         run: |
           $module = "${{ github.event.inputs.module }}"
           $modulePath = "modules/$module"
-          $zip = "$modulePath/source.zip"
+          $zip = "$modulePath/InSightecServiceHub_MVP_0001.zip"
           $work = "$modulePath/work"
 
           if (!(Test-Path $zip)) {
