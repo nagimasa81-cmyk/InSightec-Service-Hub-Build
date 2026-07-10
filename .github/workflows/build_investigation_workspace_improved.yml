@@ -188,23 +188,26 @@ jobs:
 
       - name: Install Requirements
         shell: pwsh
-        working-directory: ${{ steps.detect.outputs.build_path }}
         run: |
-          $ErrorActionPreference = "Stop"
-
-          $requirements = Get-ChildItem -Path . -File -Filter "requirements*.txt" |
-            Sort-Object Name
-
-          if ($requirements.Count -gt 0) {
-            foreach ($req in $requirements) {
-              Write-Host "Installing: $($req.FullName)"
-              python -m pip install -r $req.FullName
-            }
-          } else {
-            Write-Host "No requirements file found."
-          }
-
-          python -m pip install --upgrade pyinstaller nuitka ordered-set zstandard
+         $ErrorActionPreference = "Stop"
+         python -m pip install --upgrade pip
+         python -m pip install `
+           PySide6 `
+           Nuitka `
+           ordered-set `
+           zstandard `
+           pywin32 `
+           pyinstaller
+         Write-Host ""
+         Write-Host "Python:"
+         python --version
+         python -c "import sys; print(sys.executable)"
+         Write-Host ""
+         Write-Host "PySide6:"
+         python -c "import PySide6; print(PySide6.__version__); print(PySide6.__file__)"
+         Write-Host ""
+         Write-Host "Nuitka:"
+         python -m nuitka --version
 
       - name: Prepare Build BAT for GitHub Actions
         if: steps.detect.outputs.method == 'bat'
