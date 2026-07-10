@@ -1,0 +1,306 @@
+name: Build Investigation Workspace
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: "Python version"
+        required: true
+        default: "3.13"
+        type: choice
+        options:
+          - "3.13"
+          - "3.14"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "**/*.py"
+      - "**/*.bat"
+      - "**/*.spec"
+      - "**/requirements*.txt"
+      - "**/*.zip"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - ${{ github.event_name == 'workflow_dispatch' && inputs.python_version || '3.13' }}
+
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      NUITKA_ASSUME_YES_FOR_DOWNLOADS: "yes"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+          cache: pip
+
+      - name: Show environment
+        shell: pwsh
+        run: |
+          python --version
+          python -m pip --version
+          Get-ChildItem -Force
+
+      - name: Upgrade pip
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+
+      - name: Extract latest source ZIP when present
+        id: extract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $zip = Get-ChildItem -Path . -Recurse -File -Filter *.zip |
+            Where-Object {
+              $_.FullName -notmatch '\\build\\' -and
+              $_.FullName -notmatch '\\dist\\' -and
+              $_.FullName -notmatch '\\artifacts?\\' -and
+              $_.Name -notmatch 'Program_Update|Master_Update|artifact'
+            } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $zip) {
+            Write-Host "No source ZIP found. Using repository root."
+            "build_root=$((Resolve-Path .).Path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+
+          $extractRoot = Join-Path $env:RUNNER_TEMP "source"
+          if (Test-Path $extractRoot) {
+            Remove-Item $extractRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $extractRoot | Out-Null
+
+          Write-Host "Extracting: $($zip.FullName)"
+          Expand-Archive -Path $zip.FullName -DestinationPath $extractRoot -Force
+
+          $children = Get-ChildItem $extractRoot -Force
+          if ($children.Count -eq 1 -and $children[0].PSIsContainer) {
+            $buildRoot = $children[0].FullName
+          } else {
+            $buildRoot = $extractRoot
+          }
+
+          Write-Host "Build root: $buildRoot"
+          "build_root=$buildRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Detect build method
+        id: detect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = "${{ steps.extract.outputs.build_root }}"
+
+          $batPriority = @(
+            "01_BUILD_EXE_NUITKA.bat",
+            "01_BUILD_EXE.bat",
+            "BUILD_EXE_NUITKA.bat",
+            "BUILD_EXE.bat"
+          )
+
+          $bat = $null
+          foreach ($name in $batPriority) {
+            $bat = Get-ChildItem -Path $root -Recurse -File -Filter $name |
+              Select-Object -First 1
+            if ($bat) { break }
+          }
+
+          if (-not $bat) {
+            $bat = Get-ChildItem -Path $root -Recurse -File -Filter *.bat |
+              Where-Object { $_.Name -match 'BUILD.*EXE|EXE.*BUILD' } |
+              Select-Object -First 1
+          }
+
+          if ($bat) {
+            Write-Host "Detected BAT: $($bat.FullName)"
+            "method=bat" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "build_file=$($bat.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "work_dir=$($bat.Directory.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+
+          $spec = Get-ChildItem -Path $root -Recurse -File -Filter *.spec |
+            Select-Object -First 1
+          if ($spec) {
+            Write-Host "Detected spec: $($spec.FullName)"
+            "method=spec" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "build_file=$($spec.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "work_dir=$($spec.Directory.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+
+          $main = Get-ChildItem -Path $root -Recurse -File -Filter main.py |
+            Select-Object -First 1
+          if ($main) {
+            Write-Host "Detected main.py: $($main.FullName)"
+            "method=nuitka" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "build_file=$($main.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "work_dir=$($main.Directory.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+
+          throw "No build BAT, .spec, or main.py was found."
+
+      - name: Install requirements
+        shell: pwsh
+        working-directory: ${{ steps.detect.outputs.work_dir }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $req = Get-ChildItem -Path . -File -Filter "requirements*.txt" |
+            Sort-Object Name |
+            Select-Object -First 1
+
+          if ($req) {
+            Write-Host "Installing from $($req.Name)"
+            python -m pip install -r $req.FullName
+          } else {
+            Write-Host "requirements.txt not found. Installing build dependencies."
+            python -m pip install "PySide6>=6.8" "Nuitka>=2.7" ordered-set zstandard
+          }
+
+          python -m pip install --upgrade ordered-set zstandard
+
+      - name: Prepare build BAT for CI
+        if: steps.detect.outputs.method == 'bat'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $batPath = "${{ steps.detect.outputs.build_file }}"
+          $content = Get-Content -Path $batPath -Raw
+
+          # Remove commands that wait for keyboard input in GitHub Actions.
+          $content = $content -replace '(?im)^\s*pause\s*$', 'rem pause removed for CI'
+
+          # Add Nuitka automatic download approval when the BAT invokes Nuitka.
+          if ($content -match '(?i)-m\s+nuitka' -and
+              $content -notmatch '(?i)--assume-yes-for-downloads') {
+            $content = $content -replace '(?i)(-m\s+nuitka\b)', '$1 --assume-yes-for-downloads'
+          }
+
+          # Also cover direct "nuitka" commands.
+          if ($content -match '(?im)^\s*nuitka(\.exe)?\s+' -and
+              $content -notmatch '(?i)--assume-yes-for-downloads') {
+            $content = $content -replace '(?im)^(\s*nuitka(?:\.exe)?\s+)', '$1--assume-yes-for-downloads '
+          }
+
+          Set-Content -Path $batPath -Value $content -Encoding ASCII
+          Write-Host "Prepared BAT:"
+          Get-Content -Path $batPath
+
+      - name: Run build BAT
+        if: steps.detect.outputs.method == 'bat'
+        shell: cmd
+        working-directory: ${{ steps.detect.outputs.work_dir }}
+        run: |
+          set NUITKA_ASSUME_YES_FOR_DOWNLOADS=yes
+          call "${{ steps.detect.outputs.build_file }}"
+
+      - name: Build from spec
+        if: steps.detect.outputs.method == 'spec'
+        shell: pwsh
+        working-directory: ${{ steps.detect.outputs.work_dir }}
+        run: |
+          python -m pip install --upgrade pyinstaller
+          python -m PyInstaller --noconfirm "${{ steps.detect.outputs.build_file }}"
+
+      - name: Direct Nuitka build
+        if: steps.detect.outputs.method == 'nuitka'
+        shell: pwsh
+        working-directory: ${{ steps.detect.outputs.work_dir }}
+        run: |
+          python -m nuitka `
+            --mode=standalone `
+            --enable-plugin=pyside6 `
+            --windows-console-mode=disable `
+            --assume-yes-for-downloads `
+            --output-dir=build `
+            --output-filename=LogMerge_Investigation_Workspace.exe `
+            "${{ steps.detect.outputs.build_file }}"
+
+      - name: Collect build outputs
+        id: collect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = "${{ steps.detect.outputs.work_dir }}"
+          $package = Join-Path $env:RUNNER_TEMP "package"
+
+          if (Test-Path $package) {
+            Remove-Item $package -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $package | Out-Null
+
+          $candidates = @(
+            (Join-Path $root "dist"),
+            (Join-Path $root "build"),
+            (Join-Path $root "main.dist")
+          )
+
+          $copied = $false
+          foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+              Write-Host "Collecting: $candidate"
+              Copy-Item $candidate (Join-Path $package (Split-Path $candidate -Leaf)) -Recurse -Force
+              $copied = $true
+            }
+          }
+
+          $exeFiles = Get-ChildItem -Path $root -Recurse -File -Filter *.exe |
+            Where-Object {
+              $_.FullName -notmatch '\\.git\\' -and
+              $_.FullName -notmatch '\\site-packages\\'
+            }
+
+          foreach ($exe in $exeFiles) {
+            $dest = Join-Path $package $exe.Name
+            if (-not (Test-Path $dest)) {
+              Copy-Item $exe.FullName $dest -Force
+            }
+            $copied = $true
+          }
+
+          if (-not $copied) {
+            throw "Build completed, but no EXE or output directory was found."
+          }
+
+          $version = "${{ matrix.python-version }}".Replace(".", "")
+          $zipPath = Join-Path $env:RUNNER_TEMP "LogMerge_Investigation_Workspace_Py$version.zip"
+          Compress-Archive -Path (Join-Path $package "*") -DestinationPath $zipPath -Force
+
+          "artifact_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "artifact_name=LogMerge-Investigation-Workspace-Python-$version" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+          Write-Host "Artifact: $zipPath"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.collect.outputs.artifact_name }}
+          path: ${{ steps.collect.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14
