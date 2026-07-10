@@ -13,6 +13,7 @@ on:
           - Log_explorer
           - Water_system_analyzer
           - WS_Investigation
+          - HUB
 
 permissions:
   contents: read
