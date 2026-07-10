@@ -8,11 +8,11 @@ on:
         required: true
         type: choice
         options:
+          - HUB
           - Complaint_service_hub
           - InSightec_Service_hub
           - Log_explorer
           - Water_system_analyzer
-          - WS_Investigation
 
 permissions:
   contents: read
@@ -153,6 +153,8 @@ jobs:
             $preferredBatNames = @(
               "01_BUILD_EXE_NUITKA.bat",
               "01_BUILD_EXE.bat",
+              "Build_Hub_EXE_PyInstaller.bat",
+              "Build_Hub_EXE_PyInstaller_FIXED.bat",
               "BUILD_EXE_NUITKA.bat",
               "BUILD_EXE.bat"
             )
