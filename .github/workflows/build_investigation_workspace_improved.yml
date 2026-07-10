@@ -40,7 +40,9 @@ jobs:
         with:
           python-version: "3.13"
           architecture: x64
-
+          
+             python -m pip install -r requirements-build.txt
+ 
       - name: Fallback to Python 3.14
         if: steps.setup_python_313.outcome != 'success'
         uses: actions/setup-python@v5
