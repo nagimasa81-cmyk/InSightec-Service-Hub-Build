@@ -1,4 +1,4 @@
-name: Build Selected Module
+name: Build Selected Module Kai
 
 on:
   workflow_dispatch:
@@ -12,14 +12,6 @@ on:
           - InSightec_Service_hub
           - Log_explorer
           - Water_system_analyzer
-      python_version:
-        description: "Python version"
-        required: true
-        default: "3.13"
-        type: choice
-        options:
-          - "3.13"
-          - "3.14"
 
 permissions:
   contents: read
@@ -39,12 +31,20 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Try Python 3.14
+        id: setup_python_314
+        continue-on-error: true
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ inputs.python_version }}
+          python-version: "3.14"
           architecture: x64
-          cache: pip
+
+      - name: Fallback to Python 3.13
+        if: steps.setup_python_314.outcome != 'success'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          architecture: x64
 
       - name: Show Environment
         shell: pwsh
@@ -92,7 +92,6 @@ jobs:
           Write-Host "======================================"
           Write-Host "Module : $module"
           Write-Host "ZIP    : $($latestZip.FullName)"
-          Write-Host "Python : ${{ inputs.python_version }}"
           Write-Host "======================================"
 
           if (Test-Path $work) {
@@ -105,16 +104,11 @@ jobs:
           $children = Get-ChildItem -Path $work -Force
           if ($children.Count -eq 1 -and $children[0].PSIsContainer) {
             $sourceRoot = $children[0].FullName
-          }
-          else {
+          } else {
             $sourceRoot = $work
           }
 
           Write-Host "Source root: $sourceRoot"
-
-          Write-Host "Detected BAT files:"
-          Get-ChildItem -Path $sourceRoot -Recurse -File -Filter *.bat |
-            ForEach-Object { Write-Host " - $($_.FullName)" }
 
           $preferredBatNames = @(
             "01_BUILD_EXE_NUITKA.bat",
@@ -142,18 +136,14 @@ jobs:
           }
 
           if ($buildBat) {
-            Write-Host "======================================"
             Write-Host "Build Method : BAT"
             Write-Host "Build BAT    : $($buildBat.FullName)"
-            Write-Host "Build Path   : $($buildBat.DirectoryName)"
-            Write-Host "======================================"
 
             "method=bat" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "build_file=$($buildBat.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "build_name=$($buildBat.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "build_path=$($buildBat.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "source_root=$sourceRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "source_zip=$($latestZip.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             exit 0
           }
 
@@ -170,7 +160,6 @@ jobs:
             "build_name=$($spec.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "build_path=$($spec.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "source_root=$sourceRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "source_zip=$($latestZip.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             exit 0
           }
 
@@ -187,7 +176,6 @@ jobs:
             "build_name=$($main.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "build_path=$($main.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             "source_root=$sourceRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "source_zip=$($latestZip.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             exit 0
           }
 
@@ -207,16 +195,11 @@ jobs:
               Write-Host "Installing: $($req.FullName)"
               python -m pip install -r $req.FullName
             }
-          }
-          else {
+          } else {
             Write-Host "No requirements file found."
           }
 
-          python -m pip install --upgrade `
-            pyinstaller `
-            nuitka `
-            ordered-set `
-            zstandard
+          python -m pip install --upgrade pyinstaller nuitka ordered-set zstandard
 
       - name: Prepare Build BAT for GitHub Actions
         if: steps.detect.outputs.method == 'bat'
@@ -227,10 +210,8 @@ jobs:
           $batPath = "${{ steps.detect.outputs.build_file }}"
           $content = Get-Content -Path $batPath -Raw
 
-          # GitHub Actions cannot respond to PAUSE.
           $content = $content -replace '(?im)^\s*pause\s*$', 'rem pause removed for GitHub Actions'
 
-          # Automatically approve Nuitka dependency/tool downloads.
           if ($content -match '(?i)-m\s+nuitka' -and
               $content -notmatch '(?i)--assume-yes-for-downloads') {
             $content = $content -replace '(?i)(-m\s+nuitka\b)', '$1 --assume-yes-for-downloads'
@@ -242,9 +223,6 @@ jobs:
           }
 
           Set-Content -Path $batPath -Value $content -Encoding ASCII
-
-          Write-Host "Prepared build BAT:"
-          Get-Content -Path $batPath
 
       - name: Run Build BAT
         if: steps.detect.outputs.method == 'bat'
@@ -305,7 +283,6 @@ jobs:
           foreach ($candidate in $candidateDirs) {
             if (Test-Path $candidate) {
               $target = Join-Path $packageRoot (Split-Path $candidate -Leaf)
-              Write-Host "Collecting directory: $candidate"
               Copy-Item -Path $candidate -Destination $target -Recurse -Force
               $copied = $true
             }
@@ -320,41 +297,24 @@ jobs:
           foreach ($exe in $exeFiles) {
             $target = Join-Path $packageRoot $exe.Name
             if (!(Test-Path $target)) {
-              Write-Host "Collecting EXE: $($exe.FullName)"
               Copy-Item -Path $exe.FullName -Destination $target -Force
             }
             $copied = $true
           }
 
-          $generatedZips = Get-ChildItem -Path $sourceRoot -Recurse -File -Filter *.zip |
-            Where-Object {
-              $_.FullName -notmatch '\\work\\' -and
-              $_.FullName -ne "${{ steps.detect.outputs.source_zip }}"
-            }
-
-          foreach ($zip in $generatedZips) {
-            $target = Join-Path $packageRoot $zip.Name
-            if (!(Test-Path $target)) {
-              Copy-Item -Path $zip.FullName -Destination $target -Force
-            }
-            $copied = $true
-          }
-
           if (-not $copied) {
-            throw "Build completed, but no EXE, ZIP, or output directory was found."
+            throw "Build completed, but no EXE or output directory was found."
           }
 
           $safeModule = $module -replace '[^A-Za-z0-9_.-]', '_'
-          $pythonTag = "${{ inputs.python_version }}".Replace(".", "")
-          $artifactName = "${safeModule}_Python${pythonTag}_build"
+          $pythonVersion = (python -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')").Trim()
+          $artifactName = "${safeModule}_Python${pythonVersion}_build"
           $zipPath = Join-Path $env:RUNNER_TEMP "$artifactName.zip"
 
           Compress-Archive `
             -Path (Join-Path $packageRoot "*") `
             -DestinationPath $zipPath `
             -Force
-
-          Write-Host "Distribution ZIP: $zipPath"
 
           "artifact_name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "artifact_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
