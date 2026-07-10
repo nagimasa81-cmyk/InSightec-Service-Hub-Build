@@ -316,7 +316,8 @@ jobs:
             --enable-plugin=pyside6 `
             --windows-console-mode=disable `
             --assume-yes-for-downloads `
-            --output-dir=build `
+            --output-dir=build
+            --assume-yes-for-downloads`
             "${{ steps.detect.outputs.build_file }}"
 
       - name: Validate and Package Standalone Build
