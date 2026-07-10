@@ -1,4 +1,4 @@
-name: Build Selected Module Kai
+name: Build Selected Module
 
 on:
   workflow_dispatch:
@@ -31,19 +31,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Try Python 3.14
-        id: setup_python_314
+      # Python 3.13 is preferred for current Nuitka stability.
+      # If setup itself is unavailable, fall back to 3.14.
+      - name: Setup Python 3.13
+        id: setup_python_313
         continue-on-error: true
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.13"
           architecture: x64
 
-      - name: Fallback to Python 3.13
-        if: steps.setup_python_314.outcome != 'success'
+      - name: Fallback to Python 3.14
+        if: steps.setup_python_313.outcome != 'success'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           architecture: x64
 
       - name: Show Environment
@@ -72,6 +74,7 @@ jobs:
             throw "Module folder not found: $modulePath"
           }
 
+          # Select the latest source ZIP only.
           $zips = Get-ChildItem -Path $modulePath -Recurse -File -Filter *.zip |
             Where-Object {
               $_.FullName -notmatch '\\work\\' -and
@@ -210,19 +213,29 @@ jobs:
           $batPath = "${{ steps.detect.outputs.build_file }}"
           $content = Get-Content -Path $batPath -Raw
 
+          # Avoid py launcher selecting a different pre-installed Python version.
+          $content = $content -replace '(?im)^\s*set\s+PYEXE=.*$', 'set PYEXE=python'
+          $content = $content -replace '(?im)^\s*if\s+errorlevel\s+1\s+set\s+PYEXE=.*$', 'rem Python fallback is controlled by GitHub Actions'
+
+          # GitHub Actions cannot answer PAUSE prompts.
           $content = $content -replace '(?im)^\s*pause\s*$', 'rem pause removed for GitHub Actions'
 
+          # Automatically approve Nuitka tool downloads.
           if ($content -match '(?i)-m\s+nuitka' -and
               $content -notmatch '(?i)--assume-yes-for-downloads') {
             $content = $content -replace '(?i)(-m\s+nuitka\b)', '$1 --assume-yes-for-downloads'
           }
 
-          if ($content -match '(?im)^\s*nuitka(\.exe)?\s+' -and
-              $content -notmatch '(?i)--assume-yes-for-downloads') {
-            $content = $content -replace '(?im)^(\s*nuitka(?:\.exe)?\s+)', '$1--assume-yes-for-downloads '
+          # Put Nuitka results in a predictable output folder.
+          if ($content -match '(?i)-m\s+nuitka' -and
+              $content -notmatch '(?i)--output-dir(?:=|\s)') {
+            $content = $content -replace '(?i)(--mode=standalone\s+\^)', "--mode=standalone ^`r`n  --output-dir=build ^"
           }
 
           Set-Content -Path $batPath -Value $content -Encoding ASCII
+
+          Write-Host "Prepared BAT:"
+          Get-Content -Path $batPath
 
       - name: Run Build BAT
         if: steps.detect.outputs.method == 'bat'
@@ -253,7 +266,7 @@ jobs:
             --output-dir=build `
             "${{ steps.detect.outputs.build_file }}"
 
-      - name: Collect and Package Build Results
+      - name: Validate and Package Standalone Build
         id: package
         shell: pwsh
         run: |
@@ -267,48 +280,71 @@ jobs:
           if (Test-Path $packageRoot) {
             Remove-Item $packageRoot -Recurse -Force
           }
-
           New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 
-          $candidateDirs = @(
-            (Join-Path $buildPath "dist"),
-            (Join-Path $buildPath "release"),
-            (Join-Path $buildPath "output"),
-            (Join-Path $buildPath "build"),
-            (Join-Path $buildPath "main.dist")
-          )
+          # Nuitka standalone output: *.dist directories.
+          $distDirs = Get-ChildItem -Path $sourceRoot -Recurse -Directory |
+            Where-Object { $_.Name -like "*.dist" }
 
-          $copied = $false
-
-          foreach ($candidate in $candidateDirs) {
-            if (Test-Path $candidate) {
-              $target = Join-Path $packageRoot (Split-Path $candidate -Leaf)
-              Copy-Item -Path $candidate -Destination $target -Recurse -Force
-              $copied = $true
-            }
-          }
-
-          $exeFiles = Get-ChildItem -Path $sourceRoot -Recurse -File -Filter *.exe |
+          # PyInstaller output may be a normal dist directory.
+          $pyInstallerDirs = Get-ChildItem -Path $sourceRoot -Recurse -Directory |
             Where-Object {
-              $_.FullName -notmatch '\\site-packages\\' -and
-              $_.FullName -notmatch '\\.git\\'
+              $_.Name -eq "dist" -and
+              $_.FullName -notmatch '\\site-packages\\'
             }
 
-          foreach ($exe in $exeFiles) {
-            $target = Join-Path $packageRoot $exe.Name
-            if (!(Test-Path $target)) {
-              Copy-Item -Path $exe.FullName -Destination $target -Force
+          $standaloneFound = $false
+
+          foreach ($dist in $distDirs) {
+            $exe = Get-ChildItem -Path $dist.FullName -File -Filter *.exe |
+              Select-Object -First 1
+
+            if (-not $exe) {
+              Write-Warning "Skipping .dist without EXE: $($dist.FullName)"
+              continue
             }
-            $copied = $true
+
+            $pythonDll = Get-ChildItem -Path $dist.FullName -Recurse -File |
+              Where-Object { $_.Name -match '^python3\d+\.dll$' } |
+              Select-Object -First 1
+
+            if (-not $pythonDll) {
+              throw "Standalone validation failed: Python DLL is missing from $($dist.FullName)"
+            }
+
+            $targetName = $dist.Name
+            $target = Join-Path $packageRoot $targetName
+
+            Write-Host "Collecting standalone folder: $($dist.FullName)"
+            Write-Host "EXE        : $($exe.Name)"
+            Write-Host "Python DLL : $($pythonDll.Name)"
+
+            Copy-Item -Path $dist.FullName -Destination $target -Recurse -Force
+            $standaloneFound = $true
           }
 
-          if (-not $copied) {
-            throw "Build completed, but no EXE or output directory was found."
+          foreach ($dist in $pyInstallerDirs) {
+            $exeFiles = Get-ChildItem -Path $dist.FullName -Recurse -File -Filter *.exe
+            if ($exeFiles.Count -eq 0) {
+              continue
+            }
+
+            $target = Join-Path $packageRoot "dist"
+            Copy-Item -Path $dist.FullName -Destination $target -Recurse -Force
+            $standaloneFound = $true
+          }
+
+          if (-not $standaloneFound) {
+            Write-Host "Detected directories under source root:"
+            Get-ChildItem -Path $sourceRoot -Recurse -Directory |
+              Select-Object -ExpandProperty FullName
+
+            throw "No valid standalone .dist or PyInstaller dist directory was found. Loose EXE files are intentionally not packaged."
           }
 
           $safeModule = $module -replace '[^A-Za-z0-9_.-]', '_'
           $pythonVersion = (python -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')").Trim()
-          $artifactName = "${safeModule}_Python${pythonVersion}_build"
+          $artifactName = "${safeModule}_Python${pythonVersion}_Standalone"
           $zipPath = Join-Path $env:RUNNER_TEMP "$artifactName.zip"
 
           Compress-Archive `
@@ -316,10 +352,16 @@ jobs:
             -DestinationPath $zipPath `
             -Force
 
+          Write-Host "======================================"
+          Write-Host "Standalone distribution created"
+          Write-Host "ZIP: $zipPath"
+          Write-Host "Run the EXE inside its .dist folder."
+          Write-Host "======================================"
+
           "artifact_name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "artifact_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Upload Artifact
+      - name: Upload Standalone Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.artifact_name }}
