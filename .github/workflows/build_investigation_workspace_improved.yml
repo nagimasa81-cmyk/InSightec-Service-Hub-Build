@@ -1,4 +1,4 @@
-name: Build Selected Module
+name: Build Selected Module KAI
 
 on:
   workflow_dispatch:
