@@ -245,7 +245,54 @@ jobs:
           set NUITKA_ASSUME_YES_FOR_DOWNLOADS=yes
           echo Running ${{ steps.detect.outputs.build_name }}
           call "${{ steps.detect.outputs.build_file }}"
+            - name: Print Build Logs
+        if: always()
+        shell: pwsh
+        run: |
+          $buildPath = "${{ steps.detect.outputs.build_path }}"
+          $logRoot = Join-Path $buildPath "build_logs"
 
+          Write-Host "Build path: $buildPath"
+          Write-Host "Log path:   $logRoot"
+
+          if (-not (Test-Path $logRoot)) {
+            Write-Warning "build_logs directory was not found."
+            exit 0
+          }
+
+          $logs = Get-ChildItem `
+            -Path $logRoot `
+            -Recurse `
+            -File `
+            -Filter "*.log" |
+            Sort-Object LastWriteTime
+
+          if ($logs.Count -eq 0) {
+            Write-Warning "No build log was found."
+            exit 0
+          }
+
+          foreach ($log in $logs) {
+            Write-Host ""
+            Write-Host "=================================================="
+            Write-Host "BUILD LOG: $($log.FullName)"
+            Write-Host "=================================================="
+
+            Get-Content -Path $log.FullName -Tail 200
+          }
+
+      - name: Upload Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ServiceHub-Build-Logs
+          path: |
+            ${{ steps.detect.outputs.build_path }}/build_logs
+          if-no-files-found: warn
+          retention-days: 14
+
+
+      
       - name: Build from PyInstaller Spec
         if: steps.detect.outputs.method == 'spec'
         shell: pwsh
