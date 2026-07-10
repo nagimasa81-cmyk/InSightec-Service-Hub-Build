@@ -241,7 +241,29 @@ jobs:
 
           Write-Host "Prepared BAT:"
           Get-Content -Path $batPath
-
+          
+      - name: Add Nuitka Non-Interactive Option
+        shell: pwsh
+        run: |
+         $batFile = "${{ steps.detect.outputs.build_file }}"
+         Write-Host "Patching BAT: $batFile"
+         if (-not (Test-Path $batFile)) {
+           throw "Build BAT not found: $batFile"
+         }
+         $content = Get-Content -Path $batFile -Raw
+         if ($content -notmatch "--assume-yes-for-downloads") {
+           $content = $content.Replace(
+             "python -m nuitka",
+             "python -m nuitka --assume-yes-for-downloads"
+           )
+           $content = $content.Replace(
+             "python.exe -m nuitka",
+             "python.exe -m nuitka --assume-yes-for-downloads"
+           )
+           Set-Content -Path $batFile -Value $content -Encoding UTF8
+         }
+         Write-Host "Patched BAT content:"
+         Get-Content -Path $batFile
       - name: Run Build BAT
         if: steps.detect.outputs.method == 'bat'
         shell: cmd
