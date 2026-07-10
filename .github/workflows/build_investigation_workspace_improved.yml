@@ -245,7 +245,7 @@ jobs:
           set NUITKA_ASSUME_YES_FOR_DOWNLOADS=yes
           echo Running ${{ steps.detect.outputs.build_name }}
           call "${{ steps.detect.outputs.build_file }}"
-            - name: Print Build Logs
+       - name: Print Build Logs
         if: always()
         shell: pwsh
         run: |
