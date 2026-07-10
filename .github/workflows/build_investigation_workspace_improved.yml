@@ -246,10 +246,10 @@ jobs:
           echo Running ${{ steps.detect.outputs.build_name }}
           call "${{ steps.detect.outputs.build_file }}"
           
-       - name: Print Build Logs
-         if: always()
-         shell: pwsh
-         run: |
+      - name: Print Build Logs
+        if: always()
+        shell: pwsh
+        run: |
            $buildPath = "${{ steps.detect.outputs.build_path }}"
            $logRoot = Join-Path $buildPath "build_logs"
 
