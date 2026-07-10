@@ -12,6 +12,7 @@ on:
           - InSightec_Service_hub
           - Log_explorer
           - Water_system_analyzer
+          - WS_Investigation
 
 permissions:
   contents: read
