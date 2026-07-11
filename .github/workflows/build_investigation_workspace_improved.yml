@@ -12,8 +12,6 @@ on:
           - InSightec_Service_hub
           - Log_explorer
           - Water_system_analyzer
-          - WS_Investigation
-          - HUB
 
 permissions:
   contents: read
@@ -21,7 +19,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
 
     env:
       PYTHONUTF8: "1"
@@ -33,8 +31,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Python 3.13 is preferred for current Nuitka stability.
-      # If setup itself is unavailable, fall back to 3.14.
       - name: Setup Python 3.13
         id: setup_python_313
         continue-on-error: true
@@ -42,9 +38,7 @@ jobs:
         with:
           python-version: "3.13"
           architecture: x64
-          
-             python -m pip install -r requirements-build.txt
- 
+
       - name: Fallback to Python 3.14
         if: steps.setup_python_313.outcome != 'success'
         uses: actions/setup-python@v5
@@ -52,17 +46,46 @@ jobs:
           python-version: "3.14"
           architecture: x64
 
+      - name: Initialize Build Environment
+        id: init
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $outputRoot = Join-Path $env:RUNNER_TEMP "module_build"
+          $logRoot = Join-Path $outputRoot "build_logs"
+          $packageRoot = Join-Path $outputRoot "distribution"
+
+          if (Test-Path $outputRoot) {
+            Remove-Item $outputRoot -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+
+          "output_root=$outputRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "log_root=$logRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "package_root=$packageRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          Write-Host "Output root : $outputRoot"
+          Write-Host "Log root    : $logRoot"
+          Write-Host "Package root: $packageRoot"
+
       - name: Show Environment
         shell: pwsh
         run: |
           python --version
           python -m pip --version
           Write-Host "Selected module: ${{ inputs.module }}"
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
 
-      - name: Upgrade pip
+      - name: Upgrade Build Tools
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pyinstaller nuitka ordered-set zstandard
 
       - name: Extract Latest Source ZIP and Detect Build Method
         id: detect
@@ -73,143 +96,214 @@ jobs:
           $module = "${{ inputs.module }}"
           $modulePath = Join-Path $env:GITHUB_WORKSPACE "Module\$module"
           $work = Join-Path $modulePath "work"
+          $logRoot = "${{ steps.init.outputs.log_root }}"
+          $detectLog = Join-Path $logRoot "detect.log"
 
-          if (!(Test-Path $modulePath)) {
-            throw "Module folder not found: $modulePath"
+          try {
+            if ([string]::IsNullOrWhiteSpace($modulePath)) {
+              throw "Module path resolved to an empty value."
+            }
+
+            if (!(Test-Path -LiteralPath $modulePath)) {
+              throw "Module folder not found: $modulePath"
+            }
+
+            $zips = @(
+              Get-ChildItem -LiteralPath $modulePath -Recurse -File -Filter *.zip |
+                Where-Object {
+                  $_.FullName -notmatch '\\work\\' -and
+                  $_.FullName -notmatch '\\dist\\' -and
+                  $_.FullName -notmatch '\\build\\' -and
+                  $_.FullName -notmatch '\\release\\' -and
+                  $_.FullName -notmatch '\\output\\' -and
+                  $_.Name -notmatch '(?i)Program_Update|Master_Update|Plugin_Update|artifact|built|distribution'
+                } |
+                Sort-Object LastWriteTimeUtc -Descending
+            )
+
+            if ($zips.Count -eq 0) {
+              throw "No source ZIP file found under: $modulePath"
+            }
+
+            $latestZip = $zips[0]
+
+            if (Test-Path -LiteralPath $work) {
+              Remove-Item -LiteralPath $work -Recurse -Force
+            }
+
+            New-Item -ItemType Directory -Force -Path $work | Out-Null
+            Expand-Archive -LiteralPath $latestZip.FullName -DestinationPath $work -Force
+
+            $children = @(
+              Get-ChildItem -LiteralPath $work -Force |
+                Where-Object { $_.Name -ne "__MACOSX" }
+            )
+
+            if ($children.Count -eq 1 -and $children[0].PSIsContainer) {
+              $sourceRoot = $children[0].FullName
+            } else {
+              $sourceRoot = $work
+            }
+
+            if ([string]::IsNullOrWhiteSpace($sourceRoot) -or !(Test-Path -LiteralPath $sourceRoot)) {
+              throw "Source root is empty or invalid: '$sourceRoot'"
+            }
+
+            $preferredBatNames = @(
+              "01_BUILD_EXE_NUITKA.bat",
+              "01_BUILD_EXE.bat",
+              "BUILD_EXE_NUITKA.bat",
+              "BUILD_EXE.bat"
+            )
+
+            $buildFile = $null
+            $method = $null
+
+            foreach ($name in $preferredBatNames) {
+              $buildFile = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Filter $name |
+                Sort-Object { $_.FullName.Length }, FullName |
+                Select-Object -First 1
+              if ($buildFile) {
+                $method = "bat"
+                break
+              }
+            }
+
+            if (-not $buildFile) {
+              $buildFile = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Filter *.bat |
+                Where-Object {
+                  $_.Name -match '(?i)build.*exe|exe.*build' -or
+                  $_.Name -match '^01_'
+                } |
+                Sort-Object { $_.FullName.Length }, FullName |
+                Select-Object -First 1
+
+              if ($buildFile) {
+                $method = "bat"
+              }
+            }
+
+            if (-not $buildFile) {
+              $buildFile = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Filter *.spec |
+                Sort-Object { $_.FullName.Length }, FullName |
+                Select-Object -First 1
+
+              if ($buildFile) {
+                $method = "spec"
+              }
+            }
+
+            if (-not $buildFile) {
+              $entryNames = @("main.py", "app.py", "launcher.py")
+
+              foreach ($name in $entryNames) {
+                $buildFile = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Filter $name |
+                  Sort-Object { $_.FullName.Length }, FullName |
+                  Select-Object -First 1
+                if ($buildFile) {
+                  $method = "nuitka"
+                  break
+                }
+              }
+            }
+
+            if (-not $buildFile) {
+              throw "No build BAT, PyInstaller .spec, main.py, app.py, or launcher.py was found."
+            }
+
+            $buildPath = $buildFile.DirectoryName
+
+            if ([string]::IsNullOrWhiteSpace($buildPath)) {
+              throw "Detected build path is empty. Build file: $($buildFile.FullName)"
+            }
+
+            if (!(Test-Path -LiteralPath $buildPath)) {
+              throw "Detected build path does not exist: $buildPath"
+            }
+
+            @(
+              "Module      : $module"
+              "Source ZIP  : $($latestZip.FullName)"
+              "Source root : $sourceRoot"
+              "Method      : $method"
+              "Build file  : $($buildFile.FullName)"
+              "Build path  : $buildPath"
+            ) | Tee-Object -FilePath $detectLog
+
+            "method=$method" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "build_file=$($buildFile.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "build_name=$($buildFile.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "build_path=$buildPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "source_root=$sourceRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "source_zip=$($latestZip.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+          catch {
+            $_ | Out-String | Tee-Object -FilePath $detectLog
+            throw
           }
 
-          # Select the latest source ZIP only.
-          $zips = Get-ChildItem -Path $modulePath -Recurse -File -Filter *.zip |
-            Where-Object {
-              $_.FullName -notmatch '\\work\\' -and
-              $_.FullName -notmatch '\\dist\\' -and
-              $_.FullName -notmatch '\\build\\' -and
-              $_.FullName -notmatch '\\release\\' -and
-              $_.FullName -notmatch '\\output\\' -and
-              $_.Name -notmatch '(?i)Program_Update|Master_Update|Plugin_Update|artifact|built|distribution'
-            } |
-            Sort-Object LastWriteTimeUtc -Descending
+      - name: Validate Detection Outputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
 
-          if ($zips.Count -eq 0) {
-            throw "No source ZIP file found under: $modulePath"
+          $method = "${{ steps.detect.outputs.method }}"
+          $buildFile = "${{ steps.detect.outputs.build_file }}"
+          $buildPath = "${{ steps.detect.outputs.build_path }}"
+          $sourceRoot = "${{ steps.detect.outputs.source_root }}"
+
+          if ([string]::IsNullOrWhiteSpace($method)) {
+            throw "Detection output 'method' is empty."
           }
 
-          $latestZip = $zips[0]
-
-          Write-Host "======================================"
-          Write-Host "Module : $module"
-          Write-Host "ZIP    : $($latestZip.FullName)"
-          Write-Host "======================================"
-
-          if (Test-Path $work) {
-            Remove-Item $work -Recurse -Force
+          if ([string]::IsNullOrWhiteSpace($buildFile) -or !(Test-Path -LiteralPath $buildFile)) {
+            throw "Detection output 'build_file' is empty or invalid: '$buildFile'"
           }
 
-          New-Item -ItemType Directory -Force -Path $work | Out-Null
-          Expand-Archive -Path $latestZip.FullName -DestinationPath $work -Force
-
-          $children = Get-ChildItem -Path $work -Force
-          if ($children.Count -eq 1 -and $children[0].PSIsContainer) {
-            $sourceRoot = $children[0].FullName
-          } else {
-            $sourceRoot = $work
+          if ([string]::IsNullOrWhiteSpace($buildPath) -or !(Test-Path -LiteralPath $buildPath)) {
+            throw "Detection output 'build_path' is empty or invalid: '$buildPath'"
           }
 
-          Write-Host "Source root: $sourceRoot"
-
-          $preferredBatNames = @(
-            "01_BUILD_EXE_NUITKA.bat",
-            "01_BUILD_EXE.bat",
-            "BUILD_EXE_NUITKA.bat",
-            "BUILD_EXE.bat"
-          )
-
-          $buildBat = $null
-
-          foreach ($name in $preferredBatNames) {
-            $buildBat = Get-ChildItem -Path $sourceRoot -Recurse -File -Filter $name |
-              Select-Object -First 1
-            if ($buildBat) { break }
+          if ([string]::IsNullOrWhiteSpace($sourceRoot) -or !(Test-Path -LiteralPath $sourceRoot)) {
+            throw "Detection output 'source_root' is empty or invalid: '$sourceRoot'"
           }
 
-          if (-not $buildBat) {
-            $buildBat = Get-ChildItem -Path $sourceRoot -Recurse -File -Filter *.bat |
-              Where-Object {
-                $_.Name -match '(?i)build.*exe|exe.*build' -or
-                $_.Name -match '^01_'
-              } |
-              Sort-Object FullName |
-              Select-Object -First 1
-          }
-
-          if ($buildBat) {
-            Write-Host "Build Method : BAT"
-            Write-Host "Build BAT    : $($buildBat.FullName)"
-
-            "method=bat" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_file=$($buildBat.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_name=$($buildBat.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_path=$($buildBat.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "source_root=$sourceRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            exit 0
-          }
-
-          $spec = Get-ChildItem -Path $sourceRoot -Recurse -File -Filter *.spec |
-            Sort-Object FullName |
-            Select-Object -First 1
-
-          if ($spec) {
-            Write-Host "Build Method : PyInstaller spec"
-            Write-Host "Spec         : $($spec.FullName)"
-
-            "method=spec" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_file=$($spec.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_name=$($spec.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_path=$($spec.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "source_root=$sourceRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            exit 0
-          }
-
-          $main = Get-ChildItem -Path $sourceRoot -Recurse -File -Filter main.py |
-            Sort-Object FullName |
-            Select-Object -First 1
-
-          if ($main) {
-            Write-Host "Build Method : Direct Nuitka"
-            Write-Host "Entry point  : $($main.FullName)"
-
-            "method=nuitka" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_file=$($main.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_name=$($main.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "build_path=$($main.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "source_root=$sourceRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            exit 0
-          }
-
-          throw "No build BAT, .spec, or main.py was found."
+          Write-Host "Detection outputs validated successfully."
 
       - name: Install Requirements
         shell: pwsh
         run: |
-         $ErrorActionPreference = "Stop"
-         python -m pip install --upgrade pip
-         python -m pip install `
-           PySide6 `
-           Nuitka `
-           ordered-set `
-           zstandard `
-           pywin32 `
-           pyinstaller
-         Write-Host ""
-         Write-Host "Python:"
-         python --version
-         python -c "import sys; print(sys.executable)"
-         Write-Host ""
-         Write-Host "PySide6:"
-         python -c "import PySide6; print(PySide6.__version__); print(PySide6.__file__)"
-         Write-Host ""
-         Write-Host "Nuitka:"
-         python -m nuitka --version
+          $ErrorActionPreference = "Stop"
+
+          $buildPath = "${{ steps.detect.outputs.build_path }}"
+          $sourceRoot = "${{ steps.detect.outputs.source_root }}"
+          $logRoot = "${{ steps.init.outputs.log_root }}"
+          $logFile = Join-Path $logRoot "requirements.log"
+
+          if ([string]::IsNullOrWhiteSpace($buildPath) -or !(Test-Path -LiteralPath $buildPath)) {
+            throw "Cannot install requirements because build path is invalid: '$buildPath'"
+          }
+
+          Set-Location -LiteralPath $buildPath
+
+          $requirements = @(
+            Get-ChildItem -LiteralPath $buildPath -File -Filter "requirements*.txt"
+            Get-ChildItem -LiteralPath $sourceRoot -File -Filter "requirements*.txt"
+          ) | Sort-Object FullName -Unique
+
+          if ($requirements.Count -eq 0) {
+            "No requirements file found." | Tee-Object -FilePath $logFile
+          } else {
+            foreach ($req in $requirements) {
+              "Installing: $($req.FullName)" | Tee-Object -FilePath $logFile -Append
+              python -m pip install -r "$($req.FullName)" 2>&1 |
+                Tee-Object -FilePath $logFile -Append
+
+              if ($LASTEXITCODE -ne 0) {
+                throw "Requirement installation failed: $($req.FullName)"
+              }
+            }
+          }
 
       - name: Prepare Build BAT for GitHub Actions
         if: steps.detect.outputs.method == 'bat'
@@ -218,131 +312,102 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $batPath = "${{ steps.detect.outputs.build_file }}"
-          $content = Get-Content -Path $batPath -Raw
+          $logRoot = "${{ steps.init.outputs.log_root }}"
+          $preparedBat = Join-Path (Split-Path -Parent $batPath) "GITHUB_ACTIONS_BUILD.bat"
 
-          # Avoid py launcher selecting a different pre-installed Python version.
+          if ([string]::IsNullOrWhiteSpace($batPath) -or !(Test-Path -LiteralPath $batPath)) {
+            throw "Build BAT path is empty or invalid: '$batPath'"
+          }
+
+          $content = Get-Content -LiteralPath $batPath -Raw
+
           $content = $content -replace '(?im)^\s*set\s+PYEXE=.*$', 'set PYEXE=python'
           $content = $content -replace '(?im)^\s*if\s+errorlevel\s+1\s+set\s+PYEXE=.*$', 'rem Python fallback is controlled by GitHub Actions'
-
-          # GitHub Actions cannot answer PAUSE prompts.
           $content = $content -replace '(?im)^\s*pause\s*$', 'rem pause removed for GitHub Actions'
 
-          # Automatically approve Nuitka tool downloads.
           if ($content -match '(?i)-m\s+nuitka' -and
               $content -notmatch '(?i)--assume-yes-for-downloads') {
             $content = $content -replace '(?i)(-m\s+nuitka\b)', '$1 --assume-yes-for-downloads'
           }
 
-          # Put Nuitka results in a predictable output folder.
-          if ($content -match '(?i)-m\s+nuitka' -and
-              $content -notmatch '(?i)--output-dir(?:=|\s)') {
-            $content = $content -replace '(?i)(--mode=standalone\s+\^)', "--mode=standalone ^`r`n  --output-dir=build ^"
-          }
+          Set-Content -LiteralPath $preparedBat -Value $content -Encoding ASCII
 
-          Set-Content -Path $batPath -Value $content -Encoding ASCII
+          "prepared_bat=$preparedBat" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Get-Content -LiteralPath $preparedBat |
+            Out-File -FilePath (Join-Path $logRoot "prepared_build_bat.txt") -Encoding utf8
 
-          Write-Host "Prepared BAT:"
-          Get-Content -Path $batPath
-          
-      - name: Add Nuitka Non-Interactive Option
-        shell: pwsh
-        run: |
-         $batFile = "${{ steps.detect.outputs.build_file }}"
-         Write-Host "Patching BAT: $batFile"
-         if (-not (Test-Path $batFile)) {
-           throw "Build BAT not found: $batFile"
-         }
-         $content = Get-Content -Path $batFile -Raw
-         if ($content -notmatch "--assume-yes-for-downloads") {
-           $content = $content.Replace(
-             "python -m nuitka",
-             "python -m nuitka --assume-yes-for-downloads"
-           )
-           $content = $content.Replace(
-             "python.exe -m nuitka",
-             "python.exe -m nuitka --assume-yes-for-downloads"
-           )
-           Set-Content -Path $batFile -Value $content -Encoding UTF8
-         }
-         Write-Host "Patched BAT content:"
-         Get-Content -Path $batFile
       - name: Run Build BAT
         if: steps.detect.outputs.method == 'bat'
-        shell: cmd
-        working-directory: ${{ steps.detect.outputs.build_path }}
-        run: |
-          set NUITKA_ASSUME_YES_FOR_DOWNLOADS=yes
-          echo Running ${{ steps.detect.outputs.build_name }}
-          call "${{ steps.detect.outputs.build_file }}"
-          
-      - name: Print Build Logs
-        if: always()
+        id: bat_build
         shell: pwsh
         run: |
-           $buildPath = "${{ steps.detect.outputs.build_path }}"
-           $logRoot = Join-Path $buildPath "build_logs"
+          $ErrorActionPreference = "Stop"
 
-           Write-Host "Build path: $buildPath"
-           Write-Host "Log path:   $logRoot"
+          $buildPath = "${{ steps.detect.outputs.build_path }}"
+          $preparedBat = "${{ steps.detect.outputs.build_path }}\GITHUB_ACTIONS_BUILD.bat"
+          $logRoot = "${{ steps.init.outputs.log_root }}"
+          $logFile = Join-Path $logRoot "build.log"
 
-           if (-not (Test-Path $logRoot)) {
-             Write-Warning "build_logs directory was not found."
-           exit 0
-           }
+          if ([string]::IsNullOrWhiteSpace($buildPath) -or !(Test-Path -LiteralPath $buildPath)) {
+            throw "Cannot run BAT because build path is invalid: '$buildPath'"
+          }
 
-           $logs = Get-ChildItem `
-            -Path $logRoot `
-            -Recurse `
-            -File `
-            -Filter "*.log" |
-            Sort-Object LastWriteTime
+          if (!(Test-Path -LiteralPath $preparedBat)) {
+            throw "Prepared build BAT not found: $preparedBat"
+          }
 
-           if ($logs.Count -eq 0) {
-            Write-Warning "No build log was found."
-            exit 0
-           }
+          Set-Location -LiteralPath $buildPath
 
-           foreach ($log in $logs) {
-            Write-Host ""
-            Write-Host "=================================================="
-            Write-Host "BUILD LOG: $($log.FullName)"
-            Write-Host "=================================================="
+          cmd.exe /d /s /c "call `"$preparedBat`"" 2>&1 |
+            Tee-Object -FilePath $logFile
 
-            Get-Content -Path $log.FullName -Tail 200
-            }
+          if ($LASTEXITCODE -ne 0) {
+            throw "Build BAT failed with exit code $LASTEXITCODE"
+          }
 
-      - name: Upload Build Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ServiceHub-Build-Logs
-          path: |
-            ${{ steps.detect.outputs.build_path }}/build_logs
-          if-no-files-found: warn
-          retention-days: 14
-
-
-      
       - name: Build from PyInstaller Spec
         if: steps.detect.outputs.method == 'spec'
         shell: pwsh
-        working-directory: ${{ steps.detect.outputs.build_path }}
         run: |
-          python -m PyInstaller --noconfirm "${{ steps.detect.outputs.build_file }}"
+          $ErrorActionPreference = "Stop"
+
+          $buildPath = "${{ steps.detect.outputs.build_path }}"
+          $buildFile = "${{ steps.detect.outputs.build_file }}"
+          $logFile = Join-Path "${{ steps.init.outputs.log_root }}" "build.log"
+
+          Set-Location -LiteralPath $buildPath
+
+          python -m PyInstaller --noconfirm "$buildFile" 2>&1 |
+            Tee-Object -FilePath $logFile
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "PyInstaller build failed with exit code $LASTEXITCODE"
+          }
 
       - name: Direct Nuitka Build
         if: steps.detect.outputs.method == 'nuitka'
         shell: pwsh
-        working-directory: ${{ steps.detect.outputs.build_path }}
         run: |
+          $ErrorActionPreference = "Stop"
+
+          $buildPath = "${{ steps.detect.outputs.build_path }}"
+          $buildFile = "${{ steps.detect.outputs.build_file }}"
+          $logFile = Join-Path "${{ steps.init.outputs.log_root }}" "build.log"
+
+          Set-Location -LiteralPath $buildPath
+
           python -m nuitka `
             --mode=standalone `
             --enable-plugin=pyside6 `
             --windows-console-mode=disable `
             --assume-yes-for-downloads `
-            --output-dir=build
-            --assume-yes-for-downloads`
-            "${{ steps.detect.outputs.build_file }}"
+            --output-dir=build `
+            "$buildFile" 2>&1 |
+            Tee-Object -FilePath $logFile
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Nuitka build failed with exit code $LASTEXITCODE"
+          }
 
       - name: Validate and Package Standalone Build
         id: package
@@ -353,93 +418,129 @@ jobs:
           $module = "${{ inputs.module }}"
           $sourceRoot = "${{ steps.detect.outputs.source_root }}"
           $buildPath = "${{ steps.detect.outputs.build_path }}"
-          $packageRoot = Join-Path $env:RUNNER_TEMP "distribution"
+          $packageRoot = "${{ steps.init.outputs.package_root }}"
+          $logRoot = "${{ steps.init.outputs.log_root }}"
+          $packageLog = Join-Path $logRoot "package.log"
 
-          if (Test-Path $packageRoot) {
-            Remove-Item $packageRoot -Recurse -Force
+          if ([string]::IsNullOrWhiteSpace($sourceRoot) -or !(Test-Path -LiteralPath $sourceRoot)) {
+            throw "Cannot package because source root is invalid: '$sourceRoot'"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($buildPath) -or !(Test-Path -LiteralPath $buildPath)) {
+            throw "Cannot package because build path is invalid: '$buildPath'"
+          }
+
+          if (Test-Path -LiteralPath $packageRoot) {
+            Remove-Item -LiteralPath $packageRoot -Recurse -Force
           }
           New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 
-          # Nuitka standalone output: *.dist directories.
-          $distDirs = Get-ChildItem -Path $sourceRoot -Recurse -Directory |
-            Where-Object { $_.Name -like "*.dist" }
+          $searchRoots = @($buildPath, $sourceRoot) | Sort-Object -Unique
 
-          # PyInstaller output may be a normal dist directory.
-          $pyInstallerDirs = Get-ChildItem -Path $sourceRoot -Recurse -Directory |
-            Where-Object {
-              $_.Name -eq "dist" -and
-              $_.FullName -notmatch '\\site-packages\\'
+          $distDirs = @(
+            foreach ($root in $searchRoots) {
+              Get-ChildItem -LiteralPath $root -Recurse -Directory -ErrorAction SilentlyContinue |
+                Where-Object {
+                  $_.Name -like "*.dist" -and
+                  $_.FullName -notmatch '\\site-packages\\'
+                }
             }
+          ) | Sort-Object FullName -Unique
+
+          $pyInstallerDirs = @(
+            foreach ($root in $searchRoots) {
+              Get-ChildItem -LiteralPath $root -Recurse -Directory -ErrorAction SilentlyContinue |
+                Where-Object {
+                  $_.Name -eq "dist" -and
+                  $_.FullName -notmatch '\\site-packages\\'
+                }
+            }
+          ) | Sort-Object FullName -Unique
 
           $standaloneFound = $false
 
           foreach ($dist in $distDirs) {
-            $exe = Get-ChildItem -Path $dist.FullName -File -Filter *.exe |
+            $exe = Get-ChildItem -LiteralPath $dist.FullName -Recurse -File -Filter *.exe |
               Select-Object -First 1
 
             if (-not $exe) {
-              Write-Warning "Skipping .dist without EXE: $($dist.FullName)"
+              "Skipping .dist without EXE: $($dist.FullName)" |
+                Tee-Object -FilePath $packageLog -Append
               continue
             }
 
-            $pythonDll = Get-ChildItem -Path $dist.FullName -Recurse -File |
-              Where-Object { $_.Name -match '^python3\d+\.dll$' } |
-              Select-Object -First 1
+            $target = Join-Path $packageRoot $dist.Name
+            Copy-Item -LiteralPath $dist.FullName -Destination $target -Recurse -Force
 
-            if (-not $pythonDll) {
-              throw "Standalone validation failed: Python DLL is missing from $($dist.FullName)"
-            }
+            "Collected Nuitka standalone folder: $($dist.FullName)" |
+              Tee-Object -FilePath $packageLog -Append
 
-            $targetName = $dist.Name
-            $target = Join-Path $packageRoot $targetName
-
-            Write-Host "Collecting standalone folder: $($dist.FullName)"
-            Write-Host "EXE        : $($exe.Name)"
-            Write-Host "Python DLL : $($pythonDll.Name)"
-
-            Copy-Item -Path $dist.FullName -Destination $target -Recurse -Force
             $standaloneFound = $true
           }
 
           foreach ($dist in $pyInstallerDirs) {
-            $exeFiles = Get-ChildItem -Path $dist.FullName -Recurse -File -Filter *.exe
+            $exeFiles = @(
+              Get-ChildItem -LiteralPath $dist.FullName -Recurse -File -Filter *.exe
+            )
+
             if ($exeFiles.Count -eq 0) {
               continue
             }
 
             $target = Join-Path $packageRoot "dist"
-            Copy-Item -Path $dist.FullName -Destination $target -Recurse -Force
+            Copy-Item -LiteralPath $dist.FullName -Destination $target -Recurse -Force
+
+            "Collected PyInstaller dist folder: $($dist.FullName)" |
+              Tee-Object -FilePath $packageLog -Append
+
             $standaloneFound = $true
           }
 
           if (-not $standaloneFound) {
-            Write-Host "Detected directories under source root:"
-            Get-ChildItem -Path $sourceRoot -Recurse -Directory |
-              Select-Object -ExpandProperty FullName
+            "Directories found below build path:" |
+              Tee-Object -FilePath $packageLog -Append
 
-            throw "No valid standalone .dist or PyInstaller dist directory was found. Loose EXE files are intentionally not packaged."
+            Get-ChildItem -LiteralPath $buildPath -Recurse -Directory -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName |
+              Tee-Object -FilePath $packageLog -Append
+
+            throw "No valid Nuitka .dist or PyInstaller dist directory was found."
           }
 
           $safeModule = $module -replace '[^A-Za-z0-9_.-]', '_'
           $pythonVersion = (python -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')").Trim()
           $artifactName = "${safeModule}_Python${pythonVersion}_Standalone"
-          $zipPath = Join-Path $env:RUNNER_TEMP "$artifactName.zip"
+          $zipPath = Join-Path "${{ steps.init.outputs.output_root }}" "$artifactName.zip"
+
+          if (Test-Path -LiteralPath $zipPath) {
+            Remove-Item -LiteralPath $zipPath -Force
+          }
 
           Compress-Archive `
             -Path (Join-Path $packageRoot "*") `
             -DestinationPath $zipPath `
             -Force
 
-          Write-Host "======================================"
-          Write-Host "Standalone distribution created"
-          Write-Host "ZIP: $zipPath"
-          Write-Host "Run the EXE inside its .dist folder."
-          Write-Host "======================================"
+          if (!(Test-Path -LiteralPath $zipPath)) {
+            throw "Distribution ZIP was not created: $zipPath"
+          }
 
-          "artifact_name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "artifact_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "artifact_name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "artifact_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          Write-Host "Standalone distribution created: $zipPath"
+
+      - name: Upload Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_logs_${{ inputs.module }}_${{ github.run_number }}
+          path: ${{ steps.init.outputs.log_root }}
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload Standalone Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.artifact_name }}
