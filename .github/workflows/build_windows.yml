@@ -1,4 +1,4 @@
-name: Build MRI Raw FFT Explorer
+name: Build MRI Raw FFT Explorer R3
 
 on:
   workflow_dispatch:
@@ -13,12 +13,8 @@ on:
           - nuitka_standalone
   push:
     paths:
-      - "**/MRI_Raw_FFT_Explorer*.zip"
-      - "**/app.py"
-      - "**/requirements*.txt"
-      - "**/vendor_adapters.py"
-      - "**/vendor_sdk_config.json"
-      - ".github/workflows/build_windows.yml"
+      - "**/MRI_Raw_FFT_Explorer*_SOURCE.zip"
+      - ".github/workflows/build_mri_raw_fft.yml"
 
 concurrency:
   group: mri-raw-fft-${{ github.ref }}
@@ -41,65 +37,102 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Locate or extract MRI source
+      - name: Select latest MRI source
         id: source
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $workspace = (Get-Location).Path
           $buildRoot = Join-Path $workspace "_mri_build_source"
+          Remove-Item $buildRoot -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
 
-          # Prefer an already-extracted source containing both app.py and requirements.txt.
-          $apps = Get-ChildItem -Path $workspace -Filter app.py -File -Recurse |
-            Where-Object { $_.FullName -notlike "*$([IO.Path]::DirectorySeparatorChar)_mri_build_source$([IO.Path]::DirectorySeparatorChar)*" }
+          # Always prefer the newest MRI SOURCE ZIP. This prevents an older
+          # extracted app.py elsewhere in the repository from being selected.
+          $zip = Get-ChildItem -Path $workspace -File -Recurse -Filter "MRI_Raw_FFT_Explorer*_SOURCE.zip" |
+            Where-Object { $_.FullName -notlike "*$([IO.Path]::DirectorySeparatorChar)_mri_build_source$([IO.Path]::DirectorySeparatorChar)*" } |
+            Sort-Object LastWriteTimeUtc, Name -Descending |
+            Select-Object -First 1
 
           $sourceDir = $null
-          foreach ($app in $apps) {
-            if (Test-Path (Join-Path $app.DirectoryName "requirements.txt")) {
-              $sourceDir = $app.DirectoryName
-              break
-            }
-          }
-
-          # Otherwise find the newest matching source ZIP anywhere in the repository.
-          if (-not $sourceDir) {
-            $zip = Get-ChildItem -Path $workspace -File -Recurse -Filter "MRI_Raw_FFT_Explorer*_SOURCE.zip" |
-              Sort-Object LastWriteTimeUtc, Name -Descending |
-              Select-Object -First 1
-
-            if (-not $zip) {
-              $zip = Get-ChildItem -Path $workspace -File -Recurse -Filter "*.zip" |
-                Where-Object { $_.Name -match "MRI.*Raw.*FFT|MRI.*Reconstruction" } |
-                Sort-Object LastWriteTimeUtc, Name -Descending |
-                Select-Object -First 1
-            }
-
-            if (-not $zip) {
-              throw "No extracted MRI source and no matching Source ZIP were found in the repository."
-            }
-
-            Write-Host "Extracting source ZIP: $($zip.FullName)"
+          if ($zip) {
+            Write-Host "Selected latest source ZIP: $($zip.FullName)"
             Expand-Archive -LiteralPath $zip.FullName -DestinationPath $buildRoot -Force
-
             $app = Get-ChildItem -Path $buildRoot -Filter app.py -File -Recurse |
               Where-Object { Test-Path (Join-Path $_.DirectoryName "requirements.txt") } |
               Select-Object -First 1
             if (-not $app) {
-              throw "The selected ZIP does not contain app.py and requirements.txt in the same source folder."
+              throw "The selected Source ZIP does not contain app.py and requirements.txt in the same folder."
             }
+            $sourceDir = $app.DirectoryName
+          } else {
+            # Fallback only when no source ZIP exists.
+            $app = Get-ChildItem -Path $workspace -Filter app.py -File -Recurse |
+              Where-Object {
+                (Test-Path (Join-Path $_.DirectoryName "requirements.txt")) -and
+                ($_.FullName -notlike "*$([IO.Path]::DirectorySeparatorChar)_mri_build_source$([IO.Path]::DirectorySeparatorChar)*")
+              } |
+              Sort-Object LastWriteTimeUtc -Descending |
+              Select-Object -First 1
+            if (-not $app) { throw "No usable MRI source was found." }
             $sourceDir = $app.DirectoryName
           }
 
           Write-Host "Using source directory: $sourceDir"
-          "source_dir=$sourceDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          $required = @("app.py", "requirements.txt", "vendor_adapters.py", "vendor_sdk_config.json")
-          foreach ($name in $required) {
+          foreach ($name in @("app.py", "requirements.txt")) {
             if (-not (Test-Path (Join-Path $sourceDir $name))) {
               throw "Required source file missing: $name"
             }
           }
+
+          # Vendor SDK configuration is optional. Generate a safe default when
+          # an older package does not contain it.
+          $configPath = Join-Path $sourceDir "vendor_sdk_config.json"
+          if (-not (Test-Path $configPath)) {
+            Write-Warning "vendor_sdk_config.json was missing. Creating SDK-disabled default configuration."
+            @'
+{
+  "ge_orchestra": {
+    "enabled": false,
+    "sdk_root": "",
+    "executable": "",
+    "arguments": "--input \"{input}\" --output \"{output}\" --sdk-root \"{sdk_root}\""
+  },
+  "siemens_idea_ice": {
+    "enabled": false,
+    "sdk_root": "",
+    "executable": "",
+    "arguments": "--input \"{input}\" --output \"{output}\" --sdk-root \"{sdk_root}\""
+  },
+  "siemens_twix_python": {
+    "enabled": true
+  }
+}
+'@ | Set-Content -LiteralPath $configPath -Encoding UTF8
+          }
+
+          # Adapter module is also optional; create a harmless stub if missing.
+          $adapterPath = Join-Path $sourceDir "vendor_adapters.py"
+          if (-not (Test-Path $adapterPath)) {
+            Write-Warning "vendor_adapters.py was missing. Creating Generic-only adapter stub."
+            @'
+from __future__ import annotations
+
+def detect_vendor_plugins(*args, **kwargs):
+    return []
+'@ | Set-Content -LiteralPath $adapterPath -Encoding UTF8
+          }
+
+          "source_dir=$sourceDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Show selected source files
+        shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
+        run: |
+          Get-ChildItem -Force | Select-Object Name, Length, LastWriteTime
+          Write-Host "Config exists: $(Test-Path '.\\vendor_sdk_config.json')"
+          Write-Host "Adapter exists: $(Test-Path '.\\vendor_adapters.py')"
 
       - name: Install application dependencies
         shell: pwsh
@@ -112,37 +145,43 @@ jobs:
         if: ${{ inputs.build_engine != 'nuitka_standalone' }}
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
-        run: python -m pip install -r requirements-build-fast.txt
+        run: |
+          if (Test-Path "requirements-build-fast.txt") {
+            python -m pip install -r requirements-build-fast.txt
+          } else {
+            python -m pip install "pyinstaller>=6.10,<7"
+          }
 
       - name: Install Nuitka build dependencies
         if: ${{ inputs.build_engine == 'nuitka_standalone' }}
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
-        run: python -m pip install -r requirements-build-nuitka.txt
+        run: |
+          if (Test-Path "requirements-build-nuitka.txt") {
+            python -m pip install -r requirements-build-nuitka.txt
+          } else {
+            python -m pip install "nuitka>=2.6,<3" ordered-set zstandard
+          }
 
       - name: Build fast standalone folder
         if: ${{ inputs.build_engine != 'nuitka_standalone' }}
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
-          python -m PyInstaller `
-            --noconfirm `
-            --clean `
-            --windowed `
-            --onedir `
-            --name MRI_Raw_FFT_Explorer `
-            --distpath dist `
-            --workpath build `
-            --specpath build `
-            --add-data "vendor_sdk_config.json;." `
-            --collect-all pyqtgraph `
-            --collect-all pydicom `
-            --collect-all pylibjpeg `
-            --collect-all pylibjpeg_libjpeg `
-            --collect-all openjpeg `
-            --hidden-import vendor_adapters `
-            app.py
-          if (!(Test-Path "dist\MRI_Raw_FFT_Explorer\MRI_Raw_FFT_Explorer.exe")) { throw "EXE was not created." }
+          $args = @(
+            "-m", "PyInstaller",
+            "--noconfirm", "--clean", "--windowed", "--onedir",
+            "--name", "MRI_Raw_FFT_Explorer",
+            "--distpath", "dist", "--workpath", "build", "--specpath", "build",
+            "--add-data", "vendor_sdk_config.json;.",
+            "--collect-all", "pyqtgraph",
+            "--collect-all", "pydicom",
+            "--hidden-import", "vendor_adapters",
+            "app.py"
+          )
+          & python @args
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+          if (!(Test-Path "dist\\MRI_Raw_FFT_Explorer\\MRI_Raw_FFT_Explorer.exe")) { throw "EXE was not created." }
 
       - name: Build Nuitka standalone folder
         if: ${{ inputs.build_engine == 'nuitka_standalone' }}
@@ -160,31 +199,30 @@ jobs:
             --include-module=vendor_adapters `
             --include-data-file=vendor_sdk_config.json=vendor_sdk_config.json `
             app.py
-          if (!(Test-Path "dist_nuitka\app.dist\MRI_Raw_FFT_Explorer.exe")) { throw "EXE was not created." }
+          if ($LASTEXITCODE -ne 0) { throw "Nuitka failed with exit code $LASTEXITCODE" }
+          if (!(Test-Path "dist_nuitka\\app.dist\\MRI_Raw_FFT_Explorer.exe")) { throw "EXE was not created." }
 
-      - name: Create one-level distribution package
+      - name: Create distribution ZIP
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
           $package = "MRI_Raw_FFT_Explorer_Windows"
           Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $package | Out-Null
-
           if ("${{ inputs.build_engine }}" -eq "nuitka_standalone") {
-            Copy-Item "dist_nuitka\app.dist\*" $package -Recurse -Force
+            Copy-Item "dist_nuitka\\app.dist\\*" $package -Recurse -Force
           } else {
-            Copy-Item "dist\MRI_Raw_FFT_Explorer\*" $package -Recurse -Force
+            Copy-Item "dist\\MRI_Raw_FFT_Explorer\\*" $package -Recurse -Force
           }
-
-          Copy-Item "README.md" "$package\README.md" -Force
-          Copy-Item "vendor_sdk_config.json" "$package\vendor_sdk_config.json" -Force
-          Set-Content -Path "$package\BUILD_INFO.txt" -Encoding UTF8 -Value @(
+          if (Test-Path "README.md") { Copy-Item "README.md" "$package\\README.md" -Force }
+          Copy-Item "vendor_sdk_config.json" "$package\\vendor_sdk_config.json" -Force
+          Set-Content -Path "$package\\BUILD_INFO.txt" -Encoding UTF8 -Value @(
             "Commit=$env:GITHUB_SHA",
             "Engine=${{ inputs.build_engine }}",
             "Python=3.13",
             "BuildDateUTC=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
           )
-          Compress-Archive -Path "$package\*" -DestinationPath "MRI_Raw_FFT_Explorer_Windows.zip" -Force
+          Compress-Archive -Path "$package\\*" -DestinationPath "MRI_Raw_FFT_Explorer_Windows.zip" -Force
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
