@@ -13,6 +13,8 @@ on:
           - InSightec_Service_hub
           - Log_explorer
           - Water_system_analyzer
+          - FileTypeBuilder
+          - Test
 
 permissions:
   contents: read
