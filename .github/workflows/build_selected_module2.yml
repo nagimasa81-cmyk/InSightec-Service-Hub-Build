@@ -14,6 +14,7 @@ on:
           - Log_explorer
           - Water_system_analyzer
           - FileTypeBuilder
+          - FFT
           - Test
 
 permissions:
