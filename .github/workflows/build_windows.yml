@@ -13,10 +13,11 @@ on:
           - nuitka_standalone
   push:
     paths:
-      - "app.py"
-      - "vendor_adapters.py"
-      - "vendor_sdk_config.json"
-      - "requirements*.txt"
+      - "**/MRI_Raw_FFT_Explorer*.zip"
+      - "**/app.py"
+      - "**/requirements*.txt"
+      - "**/vendor_adapters.py"
+      - "**/vendor_sdk_config.json"
       - ".github/workflows/build_windows.yml"
 
 concurrency:
@@ -39,36 +40,90 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: "pip"
-          cache-dependency-path: |
-            requirements.txt
-            requirements-build-fast.txt
-            requirements-build-nuitka.txt
 
-      - name: Cache Nuitka compilation data
-        if: ${{ inputs.build_engine == 'nuitka_standalone' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~\AppData\Local\Nuitka\Nuitka\Cache
-            ~\AppData\Local\ccache
-          key: nuitka-win-py313-${{ hashFiles('requirements-build-nuitka.txt', 'app.py', 'vendor_adapters.py') }}
-          restore-keys: |
-            nuitka-win-py313-
+      - name: Locate or extract MRI source
+        id: source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $workspace = (Get-Location).Path
+          $buildRoot = Join-Path $workspace "_mri_build_source"
+          New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
+
+          # Prefer an already-extracted source containing both app.py and requirements.txt.
+          $apps = Get-ChildItem -Path $workspace -Filter app.py -File -Recurse |
+            Where-Object { $_.FullName -notlike "*$([IO.Path]::DirectorySeparatorChar)_mri_build_source$([IO.Path]::DirectorySeparatorChar)*" }
+
+          $sourceDir = $null
+          foreach ($app in $apps) {
+            if (Test-Path (Join-Path $app.DirectoryName "requirements.txt")) {
+              $sourceDir = $app.DirectoryName
+              break
+            }
+          }
+
+          # Otherwise find the newest matching source ZIP anywhere in the repository.
+          if (-not $sourceDir) {
+            $zip = Get-ChildItem -Path $workspace -File -Recurse -Filter "MRI_Raw_FFT_Explorer*_SOURCE.zip" |
+              Sort-Object LastWriteTimeUtc, Name -Descending |
+              Select-Object -First 1
+
+            if (-not $zip) {
+              $zip = Get-ChildItem -Path $workspace -File -Recurse -Filter "*.zip" |
+                Where-Object { $_.Name -match "MRI.*Raw.*FFT|MRI.*Reconstruction" } |
+                Sort-Object LastWriteTimeUtc, Name -Descending |
+                Select-Object -First 1
+            }
+
+            if (-not $zip) {
+              throw "No extracted MRI source and no matching Source ZIP were found in the repository."
+            }
+
+            Write-Host "Extracting source ZIP: $($zip.FullName)"
+            Expand-Archive -LiteralPath $zip.FullName -DestinationPath $buildRoot -Force
+
+            $app = Get-ChildItem -Path $buildRoot -Filter app.py -File -Recurse |
+              Where-Object { Test-Path (Join-Path $_.DirectoryName "requirements.txt") } |
+              Select-Object -First 1
+            if (-not $app) {
+              throw "The selected ZIP does not contain app.py and requirements.txt in the same source folder."
+            }
+            $sourceDir = $app.DirectoryName
+          }
+
+          Write-Host "Using source directory: $sourceDir"
+          "source_dir=$sourceDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          $required = @("app.py", "requirements.txt", "vendor_adapters.py", "vendor_sdk_config.json")
+          foreach ($name in $required) {
+            if (-not (Test-Path (Join-Path $sourceDir $name))) {
+              throw "Required source file missing: $name"
+            }
+          }
+
+      - name: Install application dependencies
+        shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
       - name: Install fast build dependencies
         if: ${{ inputs.build_engine != 'nuitka_standalone' }}
         shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
         run: python -m pip install -r requirements-build-fast.txt
 
       - name: Install Nuitka build dependencies
         if: ${{ inputs.build_engine == 'nuitka_standalone' }}
         shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
         run: python -m pip install -r requirements-build-nuitka.txt
 
       - name: Build fast standalone folder
         if: ${{ inputs.build_engine != 'nuitka_standalone' }}
         shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
           python -m PyInstaller `
             --noconfirm `
@@ -92,6 +147,7 @@ jobs:
       - name: Build Nuitka standalone folder
         if: ${{ inputs.build_engine == 'nuitka_standalone' }}
         shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
           python -m nuitka `
             --mode=standalone `
@@ -108,14 +164,18 @@ jobs:
 
       - name: Create one-level distribution package
         shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
           $package = "MRI_Raw_FFT_Explorer_Windows"
+          Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $package | Out-Null
+
           if ("${{ inputs.build_engine }}" -eq "nuitka_standalone") {
             Copy-Item "dist_nuitka\app.dist\*" $package -Recurse -Force
           } else {
             Copy-Item "dist\MRI_Raw_FFT_Explorer\*" $package -Recurse -Force
           }
+
           Copy-Item "README.md" "$package\README.md" -Force
           Copy-Item "vendor_sdk_config.json" "$package\vendor_sdk_config.json" -Force
           Set-Content -Path "$package\BUILD_INFO.txt" -Encoding UTF8 -Value @(
@@ -130,7 +190,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MRI_Raw_FFT_Explorer_Windows-${{ inputs.build_engine || 'fast_pyinstaller' }}
-          path: MRI_Raw_FFT_Explorer_Windows.zip
+          path: ${{ steps.source.outputs.source_dir }}/MRI_Raw_FFT_Explorer_Windows.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
