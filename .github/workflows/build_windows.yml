@@ -1,4 +1,4 @@
-name: Build MRI Raw FFT Explorer R3
+name: Build MRI Raw FFT Explorer R4
 
 on:
   workflow_dispatch:
@@ -87,41 +87,41 @@ jobs:
           }
 
           # Vendor SDK configuration is optional. Generate a safe default when
-          # an older package does not contain it.
+          # an older package does not contain it. Use PowerShell objects instead
+          # of an embedded here-string so the workflow remains valid YAML.
           $configPath = Join-Path $sourceDir "vendor_sdk_config.json"
           if (-not (Test-Path $configPath)) {
             Write-Warning "vendor_sdk_config.json was missing. Creating SDK-disabled default configuration."
-            @'
-{
-  "ge_orchestra": {
-    "enabled": false,
-    "sdk_root": "",
-    "executable": "",
-    "arguments": "--input \"{input}\" --output \"{output}\" --sdk-root \"{sdk_root}\""
-  },
-  "siemens_idea_ice": {
-    "enabled": false,
-    "sdk_root": "",
-    "executable": "",
-    "arguments": "--input \"{input}\" --output \"{output}\" --sdk-root \"{sdk_root}\""
-  },
-  "siemens_twix_python": {
-    "enabled": true
-  }
-}
-'@ | Set-Content -LiteralPath $configPath -Encoding UTF8
+            $defaultConfig = [ordered]@{
+              ge_orchestra = [ordered]@{
+                enabled = $false
+                sdk_root = ""
+                executable = ""
+                arguments = '--input "{input}" --output "{output}" --sdk-root "{sdk_root}"'
+              }
+              siemens_idea_ice = [ordered]@{
+                enabled = $false
+                sdk_root = ""
+                executable = ""
+                arguments = '--input "{input}" --output "{output}" --sdk-root "{sdk_root}"'
+              }
+              siemens_twix_python = [ordered]@{
+                enabled = $true
+              }
+            }
+            $defaultConfig | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding UTF8
           }
 
           # Adapter module is also optional; create a harmless stub if missing.
           $adapterPath = Join-Path $sourceDir "vendor_adapters.py"
           if (-not (Test-Path $adapterPath)) {
             Write-Warning "vendor_adapters.py was missing. Creating Generic-only adapter stub."
-            @'
-from __future__ import annotations
-
-def detect_vendor_plugins(*args, **kwargs):
-    return []
-'@ | Set-Content -LiteralPath $adapterPath -Encoding UTF8
+            @(
+              'from __future__ import annotations',
+              '',
+              'def detect_vendor_plugins(*args, **kwargs):',
+              '    return []'
+            ) | Set-Content -LiteralPath $adapterPath -Encoding UTF8
           }
 
           "source_dir=$sourceDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
