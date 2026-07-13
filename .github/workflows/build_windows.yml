@@ -1,4 +1,4 @@
-name: Build MRI Raw FFT Explorer v0.8.3 Commit0008 R4
+name: Build MRI Raw FFT Explorer v0.8.4 Commit0008 R5
 
 on:
   workflow_dispatch:
@@ -26,8 +26,8 @@ jobs:
     timeout-minutes: 90
     env:
       APP_NAME: "MRI_Raw_FFT_Explorer"
-      APP_VERSION: "0.8.3"
-      APP_COMMIT: "Commit0008_R4"
+      APP_VERSION: "0.8.4"
+      APP_COMMIT: "Commit0008_R5"
       PYTHON_VERSION: "3.13"
       PYTHONUTF8: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
