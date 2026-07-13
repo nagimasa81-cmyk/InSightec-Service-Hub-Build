@@ -1,4 +1,4 @@
-name: Universal Module Build v2
+name: Universal Module Build v3
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ on:
     paths:
       - "Module/**"
       - "**/*_SOURCE.zip"
-      - ".github/workflows/build_module_universal_v2.yml"
+      - ".github/workflows/build_module_universal_v3.yml"
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       PYTHONUTF8: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -34,14 +34,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve source and metadata
+      - name: Resolve latest source package
         id: source
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $root = $env:GITHUB_WORKSPACE
 
-          # Prefer the newest SOURCE ZIP. Fall back to an extracted source folder.
           $zip = Get-ChildItem -Path $root -Recurse -File -Filter "*_SOURCE.zip" |
             Sort-Object LastWriteTimeUtc -Descending |
             Select-Object -First 1
@@ -57,15 +56,17 @@ jobs:
             Expand-Archive -LiteralPath $zip.FullName -DestinationPath $sourceDir -Force
             Write-Host "Selected SOURCE ZIP: $($zip.FullName)"
           } else {
-            $candidates = Get-ChildItem -Path $root -Recurse -File |
-              Where-Object { $_.Name -in @("version.json", "app.py", "main.py") }
-
-            foreach ($candidate in $candidates) {
-              $folder = $candidate.Directory.FullName
-              if ((Test-Path (Join-Path $folder "requirements.txt")) -and
-                  ((Test-Path (Join-Path $folder "app.py")) -or
-                   (Test-Path (Join-Path $folder "main.py")))) {
-                $sourceDir = $folder
+            $candidateFolders = Get-ChildItem -Path $root -Recurse -Directory
+            foreach ($folder in $candidateFolders) {
+              $hasPython = Get-ChildItem -Path $folder.FullName -Recurse -File -Filter "*.py" -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+              $hasBuild = (
+                (Test-Path (Join-Path $folder.FullName "version.json")) -or
+                (Test-Path (Join-Path $folder.FullName "requirements.txt")) -or
+                (Get-ChildItem -Path $folder.FullName -File -Filter "*.spec" -ErrorAction SilentlyContinue)
+              )
+              if ($hasPython -and $hasBuild) {
+                $sourceDir = $folder.FullName
                 break
               }
             }
@@ -75,31 +76,39 @@ jobs:
             throw "No valid SOURCE ZIP or extracted source folder was found."
           }
 
-          $versionPath = Join-Path $sourceDir "version.json"
-          $meta = $null
+          "source_dir=$sourceDir" >> $env:GITHUB_OUTPUT
+          "source_zip_name=$sourceZipName" >> $env:GITHUB_OUTPUT
 
+      - name: Resolve metadata and build strategy
+        id: meta
+        shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sourceDir = (Get-Location).Path
+          $sourceZipName = "${{ steps.source.outputs.source_zip_name }}"
+
+          $meta = $null
+          $versionPath = Join-Path $sourceDir "version.json"
           if (Test-Path $versionPath) {
             try {
               $meta = Get-Content $versionPath -Raw | ConvertFrom-Json
               Write-Host "Using version.json metadata."
             } catch {
-              Write-Warning "version.json could not be parsed. Falling back to filename metadata."
-              $meta = $null
+              Write-Warning "version.json parse failed. Falling back to automatic metadata."
             }
           }
 
-          # Backward-compatible defaults.
-          $folderName = Split-Path $sourceDir -Leaf
-          $baseName = if ($sourceZipName) { $sourceZipName } else { $folderName }
-          $baseName = $baseName -replace "_SOURCE$", ""
+          $baseName = if ($sourceZipName) {
+            $sourceZipName -replace "_SOURCE$", ""
+          } else {
+            Split-Path $sourceDir -Leaf
+          }
 
           $fallbackApp = $baseName
           $fallbackVersion = "Unknown"
           $fallbackCommit = "Unknown"
 
-          # Parse common legacy names such as:
-          # WaterSystemAnalyzer_Ver73g_DropFirstUI_SOURCE.zip
-          # MRI_Raw_FFT_Explorer_Commit0010_R1_SOURCE.zip
           if ($baseName -match "^(?<app>.+?)_(?<version>v?\d+(?:\.\d+){1,3}|Ver[^_]+)_(?<commit>.+)$") {
             $fallbackApp = $Matches["app"]
             $fallbackVersion = $Matches["version"]
@@ -120,63 +129,163 @@ jobs:
           $appName = First-NonEmpty $meta.app_name $fallbackApp
           $appVersion = First-NonEmpty $meta.version $fallbackVersion
           $appCommit = First-NonEmpty $meta.commit $fallbackCommit
-          $entryPoint = First-NonEmpty $meta.entry_point ""
-
-          if ([string]::IsNullOrWhiteSpace($entryPoint)) {
-            if (Test-Path (Join-Path $sourceDir "app.py")) {
-              $entryPoint = "app.py"
-            } elseif (Test-Path (Join-Path $sourceDir "main.py")) {
-              $entryPoint = "main.py"
-            } else {
-              $pythonEntry = Get-ChildItem -Path $sourceDir -File -Filter "*.py" |
-                Where-Object { $_.Name -notmatch "^(setup|version|vendor_)" } |
-                Select-Object -First 1
-              if (-not $pythonEntry) { throw "No Python entry point was found." }
-              $entryPoint = $pythonEntry.Name
-            }
-          }
-
           $artifactPrefix = First-NonEmpty $meta.artifact_prefix $appName
           $exeName = First-NonEmpty $meta.exe_name "$appName.exe"
           $preferredEngine = First-NonEmpty $meta.build_engine "fast_pyinstaller"
-          $requestedEngine = "${{ github.event.inputs.build_engine }}"
 
+          $requestedEngine = "${{ github.event.inputs.build_engine }}"
           if ([string]::IsNullOrWhiteSpace($requestedEngine) -or $requestedEngine -eq "auto") {
             $buildEngine = $preferredEngine
           } else {
             $buildEngine = $requestedEngine
           }
-
           if ($buildEngine -notin @("fast_pyinstaller", "nuitka_standalone")) {
-            Write-Warning "Unsupported build engine '$buildEngine'; using fast_pyinstaller."
             $buildEngine = "fast_pyinstaller"
+          }
+
+          # Build strategy priority:
+          # 1. version.json entry_point
+          # 2. known BAT files
+          # 3. PyInstaller SPEC
+          # 4. pyproject.toml
+          # 5. known Python entry filenames
+          # 6. Python code scoring
+          $entryPoint = First-NonEmpty $meta.entry_point ""
+          $buildMode = ""
+          $buildScript = ""
+          $specFile = ""
+
+          $knownBatFiles = @(
+            "02_BUILD_FAST_STANDALONE.bat",
+            "03_BUILD_NUITKA_STANDALONE.bat",
+            "01_BUILD_EXE_NUITKA.bat",
+            "BUILD_EXE.bat",
+            "build.bat"
+          )
+
+          foreach ($name in $knownBatFiles) {
+            $candidate = Get-ChildItem -Path $sourceDir -Recurse -File -Filter $name |
+              Select-Object -First 1
+            if ($candidate) {
+              $buildScript = $candidate.FullName
+              break
+            }
+          }
+
+          if ($buildScript) {
+            $buildMode = "bat"
+          }
+
+          if (-not $buildMode) {
+            $spec = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.spec" |
+              Where-Object { $_.FullName -notmatch "\\build\\" } |
+              Select-Object -First 1
+            if ($spec) {
+              $specFile = $spec.FullName
+              $buildMode = "spec"
+            }
+          }
+
+          if (-not $buildMode) {
+            $pyproject = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "pyproject.toml" |
+              Select-Object -First 1
+            if ($pyproject) {
+              $buildMode = "pyproject"
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($entryPoint)) {
+            $knownEntries = @(
+              "app.py",
+              "main.py",
+              "run.py",
+              "start.py",
+              "launcher.py",
+              "__main__.py"
+            )
+
+            foreach ($name in $knownEntries) {
+              $candidate = Get-ChildItem -Path $sourceDir -Recurse -File -Filter $name |
+                Where-Object { $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages)\\" } |
+                Select-Object -First 1
+              if ($candidate) {
+                $entryPoint = $candidate.FullName.Substring($sourceDir.Length).TrimStart('\')
+                break
+              }
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($entryPoint)) {
+            $pythonFiles = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.py" |
+              Where-Object {
+                $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages|tests?|examples?)\\" -and
+                $_.Name -notmatch "^(setup|version|vendor_|artifact_|tracker_)"
+              }
+
+            $bestScore = -1
+            $bestFile = $null
+
+            foreach ($file in $pythonFiles) {
+              $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+              if ($null -eq $content) { continue }
+
+              $score = 0
+              if ($content -match 'if\s+__name__\s*==\s*["'']__main__["'']') { $score += 50 }
+              if ($content -match '\bQApplication\s*\(') { $score += 30 }
+              if ($content -match '\bQMainWindow\b') { $score += 15 }
+              if ($content -match '\bTk\s*\(') { $score += 25 }
+              if ($content -match '\bwx\.App\s*\(') { $score += 25 }
+              if ($content -match '\bdef\s+main\s*\(') { $score += 20 }
+              if ($content -match '\.show\s*\(') { $score += 10 }
+              if ($file.Name -match '(app|main|run|start|launcher)') { $score += 10 }
+
+              if ($score -gt $bestScore) {
+                $bestScore = $score
+                $bestFile = $file
+              }
+            }
+
+            if ($bestFile -and $bestScore -gt 0) {
+              $entryPoint = $bestFile.FullName.Substring($sourceDir.Length).TrimStart('\')
+              Write-Host "Auto-scored entry point: $entryPoint (score $bestScore)"
+            }
+          }
+
+          if (-not $buildMode) {
+            $buildMode = "python"
+          }
+
+          if ($buildMode -in @("python", "pyproject") -and [string]::IsNullOrWhiteSpace($entryPoint)) {
+            throw "No Python entry point was found after BAT, SPEC, pyproject, and code analysis."
           }
 
           $requirements = Join-Path $sourceDir "requirements.txt"
           if (-not (Test-Path $requirements)) {
-            Write-Warning "requirements.txt was missing. Creating an empty file."
-            New-Item -ItemType File -Force -Path $requirements | Out-Null
+            $requirements = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "requirements*.txt" |
+              Select-Object -First 1 |
+              ForEach-Object { $_.FullName }
           }
 
-          $entryPath = Join-Path $sourceDir $entryPoint
-          if (-not (Test-Path $entryPath)) {
-            throw "Entry point not found: $entryPath"
-          }
+          Write-Host "Application : $appName"
+          Write-Host "Version     : $appVersion"
+          Write-Host "Commit      : $appCommit"
+          Write-Host "Build Mode  : $buildMode"
+          Write-Host "Entry Point : $entryPoint"
+          Write-Host "Build Script: $buildScript"
+          Write-Host "SPEC File   : $specFile"
+          Write-Host "Engine      : $buildEngine"
 
-          Write-Host "Resolved application : $appName"
-          Write-Host "Resolved version     : $appVersion"
-          Write-Host "Resolved commit      : $appCommit"
-          Write-Host "Resolved entry point : $entryPoint"
-          Write-Host "Resolved engine      : $buildEngine"
-
-          "source_dir=$sourceDir" >> $env:GITHUB_OUTPUT
           "app_name=$appName" >> $env:GITHUB_OUTPUT
           "app_version=$appVersion" >> $env:GITHUB_OUTPUT
           "app_commit=$appCommit" >> $env:GITHUB_OUTPUT
-          "entry_point=$entryPoint" >> $env:GITHUB_OUTPUT
-          "exe_name=$exeName" >> $env:GITHUB_OUTPUT
           "artifact_prefix=$artifactPrefix" >> $env:GITHUB_OUTPUT
+          "exe_name=$exeName" >> $env:GITHUB_OUTPUT
           "build_engine=$buildEngine" >> $env:GITHUB_OUTPUT
+          "build_mode=$buildMode" >> $env:GITHUB_OUTPUT
+          "entry_point=$entryPoint" >> $env:GITHUB_OUTPUT
+          "build_script=$buildScript" >> $env:GITHUB_OUTPUT
+          "spec_file=$specFile" >> $env:GITHUB_OUTPUT
+          "requirements=$requirements" >> $env:GITHUB_OUTPUT
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -188,50 +297,67 @@ jobs:
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
 
-          if ("${{ steps.source.outputs.build_engine }}" -eq "nuitka_standalone") {
+          $requirements = "${{ steps.meta.outputs.requirements }}"
+          if (-not [string]::IsNullOrWhiteSpace($requirements) -and (Test-Path $requirements)) {
+            python -m pip install -r $requirements
+          } else {
+            Write-Warning "No requirements file found. Continuing with build tools only."
+          }
+
+          if ("${{ steps.meta.outputs.build_engine }}" -eq "nuitka_standalone") {
             python -m pip install nuitka ordered-set zstandard
           } else {
             python -m pip install pyinstaller
           }
 
       - name: Validate source
+        if: steps.meta.outputs.entry_point != ''
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
-          python -m py_compile "${{ steps.source.outputs.entry_point }}"
-          python -c "import importlib.util, pathlib; p=pathlib.Path(r'${{ steps.source.outputs.entry_point }}'); s=importlib.util.spec_from_file_location('build_entry', p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print('Entry import validated')"
+          python -m py_compile "${{ steps.meta.outputs.entry_point }}"
 
-      - name: Build PyInstaller standalone
-        if: steps.source.outputs.build_engine == 'fast_pyinstaller'
+      - name: Run detected BAT build
+        if: steps.meta.outputs.build_mode == 'bat'
+        shell: cmd
+        working-directory: ${{ steps.source.outputs.source_dir }}
+        run: |
+          call "${{ steps.meta.outputs.build_script }}"
+
+      - name: Run detected SPEC build
+        if: steps.meta.outputs.build_mode == 'spec'
+        shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
+        run: |
+          python -m PyInstaller --noconfirm --clean "${{ steps.meta.outputs.spec_file }}"
+
+      - name: Build Python entry with PyInstaller
+        if: steps.meta.outputs.build_mode != 'bat' && steps.meta.outputs.build_mode != 'spec' && steps.meta.outputs.build_engine == 'fast_pyinstaller'
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
           $sourceDir = (Get-Location).Path
-          $entry = Join-Path $sourceDir "${{ steps.source.outputs.entry_point }}"
+          $entry = Join-Path $sourceDir "${{ steps.meta.outputs.entry_point }}"
 
           $args = @(
             "--noconfirm",
             "--clean",
             "--windowed",
             "--onedir",
-            "--name", "${{ steps.source.outputs.app_name }}",
+            "--name", "${{ steps.meta.outputs.app_name }}",
             "--distpath", "dist",
             "--workpath", "build",
             "--paths", $sourceDir,
             $entry
           )
 
-          # Include JSON configuration and metadata without hard-coding names.
           Get-ChildItem -Path $sourceDir -File -Filter "*.json" |
             ForEach-Object {
               $args = @("--add-data", "$($_.FullName);.") + $args
             }
 
-          # Optional medical imaging dependencies are collected only when installed.
-          $optionalCollect = @("pydicom")
-          foreach ($package in $optionalCollect) {
+          foreach ($package in @("pydicom", "PySide6", "pyqtgraph")) {
             python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('$package') else 1)"
             if ($LASTEXITCODE -eq 0) {
               $args = @("--collect-all", $package) + $args
@@ -240,8 +366,8 @@ jobs:
 
           python -m PyInstaller @args
 
-      - name: Build Nuitka standalone
-        if: steps.source.outputs.build_engine == 'nuitka_standalone'
+      - name: Build Python entry with Nuitka
+        if: steps.meta.outputs.build_mode != 'bat' && steps.meta.outputs.build_mode != 'spec' && steps.meta.outputs.build_engine == 'nuitka_standalone'
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
@@ -251,8 +377,42 @@ jobs:
             --windows-console-mode=disable `
             --assume-yes-for-downloads `
             --output-dir=dist_nuitka `
-            --output-filename="${{ steps.source.outputs.exe_name }}" `
-            "${{ steps.source.outputs.entry_point }}"
+            --output-filename="${{ steps.meta.outputs.exe_name }}" `
+            "${{ steps.meta.outputs.entry_point }}"
+
+      - name: Locate build output
+        id: output
+        shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
+        run: |
+          $sourceDir = (Get-Location).Path
+          $candidateDirs = @()
+
+          foreach ($name in @("artifact_payload", "dist", "dist_nuitka", "output", "build_output")) {
+            $path = Join-Path $sourceDir $name
+            if (Test-Path $path) {
+              $candidateDirs += Get-Item $path
+            }
+          }
+
+          $exe = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.exe" |
+            Where-Object {
+              $_.FullName -notmatch "\\(venv|\.venv|site-packages|build\\temp)\\" -and
+              $_.Name -notmatch "^(python|pip|windeployqt)"
+            } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "Build finished but no EXE was found."
+          }
+
+          $outputDir = $exe.Directory.FullName
+          Write-Host "Detected EXE: $($exe.FullName)"
+          Write-Host "Detected output folder: $outputDir"
+
+          "exe_path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "output_dir=$outputDir" >> $env:GITHUB_OUTPUT
 
       - name: Stage single-layer Artifact
         shell: pwsh
@@ -262,29 +422,25 @@ jobs:
           Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $package | Out-Null
 
-          if ("${{ steps.source.outputs.build_engine }}" -eq "nuitka_standalone") {
-            $distFolder = Get-ChildItem "dist_nuitka" -Directory |
-              Where-Object { $_.Name -like "*.dist" } |
-              Select-Object -First 1
-            if (-not $distFolder) { throw "Nuitka dist folder not found." }
-            Copy-Item "$($distFolder.FullName)\*" $package -Recurse -Force
-          } else {
-            $distFolder = Join-Path "dist" "${{ steps.source.outputs.app_name }}"
-            if (-not (Test-Path $distFolder)) { throw "PyInstaller dist folder not found." }
-            Copy-Item "$distFolder\*" $package -Recurse -Force
-          }
+          $outputDir = "${{ steps.output.outputs.output_dir }}"
+          Copy-Item "$outputDir\*" $package -Recurse -Force
 
           foreach ($name in @("README.md", "version.json")) {
-            if (Test-Path $name) { Copy-Item $name "$package\$name" -Force }
+            $candidate = Join-Path (Get-Location).Path $name
+            if (Test-Path $candidate) {
+              Copy-Item $candidate "$package\$name" -Force
+            }
           }
 
           Set-Content -Path "$package\BUILD_INFO.txt" -Encoding UTF8 -Value @(
-            "Application=${{ steps.source.outputs.app_name }}",
-            "Version=${{ steps.source.outputs.app_version }}",
-            "Release=${{ steps.source.outputs.app_commit }}",
+            "Application=${{ steps.meta.outputs.app_name }}",
+            "Version=${{ steps.meta.outputs.app_version }}",
+            "Release=${{ steps.meta.outputs.app_commit }}",
             "GitSHA=$env:GITHUB_SHA",
             "Branch=$env:GITHUB_REF_NAME",
-            "Engine=${{ steps.source.outputs.build_engine }}",
+            "BuildMode=${{ steps.meta.outputs.build_mode }}",
+            "Engine=${{ steps.meta.outputs.build_engine }}",
+            "EntryPoint=${{ steps.meta.outputs.entry_point }}",
             "Python=3.13",
             "BuildDateUTC=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))",
             "Runner=$env:RUNNER_OS"
@@ -293,7 +449,7 @@ jobs:
       - name: Upload versioned Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.source.outputs.artifact_prefix }}_${{ steps.source.outputs.app_version }}_${{ steps.source.outputs.app_commit }}_${{ steps.source.outputs.build_engine }}
+          name: ${{ steps.meta.outputs.artifact_prefix }}_${{ steps.meta.outputs.app_version }}_${{ steps.meta.outputs.app_commit }}_${{ steps.meta.outputs.build_engine }}
           path: ${{ steps.source.outputs.source_dir }}/artifact_payload/*
           include-hidden-files: true
           if-no-files-found: error
