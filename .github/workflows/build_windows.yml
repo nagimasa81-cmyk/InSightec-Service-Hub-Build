@@ -4,9 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       module_name:
-        description: "Module folder name under Module/ (example: MRI_Raw_FFT_Explorer)"
+        description: "Select Module"
         required: true
-        type: string
+        type: choice
+        options:
+          - FFT
+          - Water_system_analyzer
+          - WS_Investigation
+          - Log_explorer
+          - Complaint_service_hub
+          - InSightec_Service_hub
+          - HUB
+          - FileTypeBuilder
       source_zip:
         description: "Optional exact SOURCE ZIP filename. Leave blank to use the latest name in the selected module."
         required: false
