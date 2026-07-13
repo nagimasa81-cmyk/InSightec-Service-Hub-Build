@@ -1,4 +1,4 @@
-name: Build MRI Raw FFT Explorer R6
+name: Build MRI Raw FFT Explorer Commit 0008 R2
 
 on:
   workflow_dispatch:
@@ -226,33 +226,49 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Nuitka failed with exit code $LASTEXITCODE" }
           if (!(Test-Path "dist_nuitka\\app.dist\\MRI_Raw_FFT_Explorer.exe")) { throw "EXE was not created." }
 
-      - name: Create distribution ZIP
+      - name: Stage distribution artifact
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
-          $package = "MRI_Raw_FFT_Explorer_Windows"
+          # Do not create a ZIP here. actions/upload-artifact creates the single
+          # downloadable Artifact ZIP automatically.
+          $package = "artifact_payload"
           Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $package | Out-Null
+
           if ("${{ env.BUILD_ENGINE }}" -eq "nuitka_standalone") {
             Copy-Item "dist_nuitka\\app.dist\\*" $package -Recurse -Force
           } else {
             Copy-Item "dist\\MRI_Raw_FFT_Explorer\\*" $package -Recurse -Force
           }
-          if (Test-Path "README.md") { Copy-Item "README.md" "$package\\README.md" -Force }
+
+          if (Test-Path "README.md") {
+            Copy-Item "README.md" "$package\\README.md" -Force
+          }
           Copy-Item "vendor_sdk_config.json" "$package\\vendor_sdk_config.json" -Force
+
           Set-Content -Path "$package\\BUILD_INFO.txt" -Encoding UTF8 -Value @(
             "Commit=$env:GITHUB_SHA",
             "Engine=${{ env.BUILD_ENGINE }}",
             "Python=3.13",
             "BuildDateUTC=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
           )
-          Compress-Archive -Path "$package\\*" -DestinationPath "MRI_Raw_FFT_Explorer_Windows.zip" -Force
+
+          if (!(Test-Path "$package\\MRI_Raw_FFT_Explorer.exe")) {
+            throw "The staged Artifact does not contain MRI_Raw_FFT_Explorer.exe."
+          }
+
+          Write-Host "Artifact root contents:"
+          Get-ChildItem -Path $package -Force | Select-Object Name, Length
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: MRI_Raw_FFT_Explorer_Windows-${{ env.BUILD_ENGINE }}
-          path: ${{ steps.source.outputs.source_dir }}/MRI_Raw_FFT_Explorer_Windows.zip
+          # Upload the payload contents directly. The downloaded Artifact has
+          # one ZIP layer and opens directly to the EXE and dependency files.
+          path: ${{ steps.source.outputs.source_dir }}/artifact_payload/*
           if-no-files-found: error
-          compression-level: 0
+          include-hidden-files: true
+          compression-level: 6
           retention-days: 14
