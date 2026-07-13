@@ -1,4 +1,4 @@
-name: Build MRI Raw FFT Explorer R4
+name: Build MRI Raw FFT Explorer R6
 
 on:
   workflow_dispatch:
@@ -27,6 +27,7 @@ jobs:
     env:
       PYTHONUTF8: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      BUILD_ENGINE: ${{ github.event.inputs.build_engine || 'fast_pyinstaller' }}
 
     steps:
       - name: Checkout
@@ -118,9 +119,16 @@ jobs:
             Write-Warning "vendor_adapters.py was missing. Creating Generic-only adapter stub."
             @(
               'from __future__ import annotations',
+              'from pathlib import Path',
               '',
-              'def detect_vendor_plugins(*args, **kwargs):',
-              '    return []'
+              'def config_path():',
+              '    return Path(__file__).resolve().parent / "vendor_sdk_config.json"',
+              '',
+              'def backend_status():',
+              '    return []',
+              '',
+              'def reconstruct(*args, **kwargs):',
+              '    raise RuntimeError("Vendor SDK adapter is unavailable. Generic reconstruction remains available.")'
             ) | Set-Content -LiteralPath $adapterPath -Encoding UTF8
           }
 
@@ -141,8 +149,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Validate Python imports
+        shell: pwsh
+        working-directory: ${{ steps.source.outputs.source_dir }}
+        run: |
+          python -m py_compile app.py vendor_adapters.py
+          python -c "import app; import vendor_adapters; print('Application imports validated')"
+
       - name: Install fast build dependencies
-        if: ${{ inputs.build_engine != 'nuitka_standalone' }}
+        if: ${{ env.BUILD_ENGINE != 'nuitka_standalone' }}
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
@@ -153,7 +168,7 @@ jobs:
           }
 
       - name: Install Nuitka build dependencies
-        if: ${{ inputs.build_engine == 'nuitka_standalone' }}
+        if: ${{ env.BUILD_ENGINE == 'nuitka_standalone' }}
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
@@ -164,27 +179,36 @@ jobs:
           }
 
       - name: Build fast standalone folder
-        if: ${{ inputs.build_engine != 'nuitka_standalone' }}
+        if: ${{ env.BUILD_ENGINE != 'nuitka_standalone' }}
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
+          $configPath = (Resolve-Path ".\vendor_sdk_config.json").Path
+          $appPath = (Resolve-Path ".\app.py").Path
+          Write-Host "PyInstaller config source: $configPath"
+          Write-Host "PyInstaller app source: $appPath"
+
           $args = @(
             "-m", "PyInstaller",
             "--noconfirm", "--clean", "--windowed", "--onedir",
             "--name", "MRI_Raw_FFT_Explorer",
-            "--distpath", "dist", "--workpath", "build", "--specpath", "build",
-            "--add-data", "vendor_sdk_config.json;.",
+            "--distpath", "dist", "--workpath", "build",
+            "--add-data", "$configPath;.",
+            "--paths", ".",
             "--collect-all", "pyqtgraph",
             "--collect-all", "pydicom",
+            "--hidden-import", "pylibjpeg",
+            "--hidden-import", "libjpeg",
+            "--hidden-import", "openjpeg",
             "--hidden-import", "vendor_adapters",
-            "app.py"
+            $appPath
           )
           & python @args
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
           if (!(Test-Path "dist\\MRI_Raw_FFT_Explorer\\MRI_Raw_FFT_Explorer.exe")) { throw "EXE was not created." }
 
       - name: Build Nuitka standalone folder
-        if: ${{ inputs.build_engine == 'nuitka_standalone' }}
+        if: ${{ env.BUILD_ENGINE == 'nuitka_standalone' }}
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
@@ -209,7 +233,7 @@ jobs:
           $package = "MRI_Raw_FFT_Explorer_Windows"
           Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $package | Out-Null
-          if ("${{ inputs.build_engine }}" -eq "nuitka_standalone") {
+          if ("${{ env.BUILD_ENGINE }}" -eq "nuitka_standalone") {
             Copy-Item "dist_nuitka\\app.dist\\*" $package -Recurse -Force
           } else {
             Copy-Item "dist\\MRI_Raw_FFT_Explorer\\*" $package -Recurse -Force
@@ -218,7 +242,7 @@ jobs:
           Copy-Item "vendor_sdk_config.json" "$package\\vendor_sdk_config.json" -Force
           Set-Content -Path "$package\\BUILD_INFO.txt" -Encoding UTF8 -Value @(
             "Commit=$env:GITHUB_SHA",
-            "Engine=${{ inputs.build_engine }}",
+            "Engine=${{ env.BUILD_ENGINE }}",
             "Python=3.13",
             "BuildDateUTC=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
           )
@@ -227,7 +251,7 @@ jobs:
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: MRI_Raw_FFT_Explorer_Windows-${{ inputs.build_engine || 'fast_pyinstaller' }}
+          name: MRI_Raw_FFT_Explorer_Windows-${{ env.BUILD_ENGINE }}
           path: ${{ steps.source.outputs.source_dir }}/MRI_Raw_FFT_Explorer_Windows.zip
           if-no-files-found: error
           compression-level: 0
