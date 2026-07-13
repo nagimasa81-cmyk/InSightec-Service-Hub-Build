@@ -13,8 +13,6 @@ on:
           - InSightec_Service_hub
           - Log_explorer
           - Water_system_analyzer
-          - FileTypeBuilder
-          - Test
 
 permissions:
   contents: read
@@ -111,24 +109,61 @@ jobs:
               throw "Module folder not found: $modulePath"
             }
 
-            $zips = @(
+            $allZips = @(
               Get-ChildItem -LiteralPath $modulePath -Recurse -File -Filter *.zip |
                 Where-Object {
                   $_.FullName -notmatch '\\work\\' -and
                   $_.FullName -notmatch '\\dist\\' -and
                   $_.FullName -notmatch '\\build\\' -and
                   $_.FullName -notmatch '\\release\\' -and
-                  $_.FullName -notmatch '\\output\\' -and
-                  $_.Name -notmatch '(?i)Program_Update|Master_Update|Plugin_Update|artifact|built|distribution'
+                  $_.FullName -notmatch '\\output\\'
                 } |
                 Sort-Object LastWriteTimeUtc -Descending
             )
 
+            Write-Host "ZIP files found under module:"
+            if ($allZips.Count -eq 0) {
+              Write-Host "  (none)"
+            }
+            else {
+              foreach ($zip in $allZips) {
+                Write-Host "  - $($zip.Name)"
+              }
+            }
+
+            # Preferred naming rule for build sources.
+            $zips = @(
+              $allZips |
+                Where-Object { $_.Name -match '(?i)_SOURCE\.zip$' } |
+                Sort-Object LastWriteTimeUtc -Descending
+            )
+
+            # Compatibility fallback for older packages that contain "source"
+            # but do not yet end with _SOURCE.zip.
             if ($zips.Count -eq 0) {
-              throw "No source ZIP file found under: $modulePath"
+              $zips = @(
+                $allZips |
+                  Where-Object {
+                    $_.BaseName -match '(?i)source' -and
+                    $_.Name -notmatch '(?i)(program[_ -]?update|master[_ -]?update|plugin[_ -]?update|filetype[_ -]?update|artifact|distribution)'
+                  } |
+                  Sort-Object LastWriteTimeUtc -Descending
+              )
+            }
+
+            if ($zips.Count -eq 0) {
+              $foundNames = if ($allZips.Count -gt 0) {
+                ($allZips | ForEach-Object { $_.Name }) -join ", "
+              }
+              else {
+                "(none)"
+              }
+
+              throw "No build Source ZIP was found under: $modulePath`nExpected: *_SOURCE.zip`nZIP files found: $foundNames"
             }
 
             $latestZip = $zips[0]
+            Write-Host "Selected Source ZIP: $($latestZip.FullName)"
 
             if (Test-Path -LiteralPath $work) {
               Remove-Item -LiteralPath $work -Recurse -Force
@@ -199,7 +234,7 @@ jobs:
             }
 
             if (-not $buildFile) {
-              $entryNames = @("main.py", "app.py", "launcher.py")
+              $entryNames = @("main.py", "app.py", "launcher.py", "LogMergeTool_NoExcel_Main.py")
 
               foreach ($name in $entryNames) {
                 $buildFile = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Filter $name |
@@ -213,7 +248,7 @@ jobs:
             }
 
             if (-not $buildFile) {
-              throw "No build BAT, PyInstaller .spec, main.py, app.py, or launcher.py was found."
+              throw "No build BAT, PyInstaller .spec, main.py, app.py, launcher.py, or LogMergeTool_NoExcel_Main.py was found."
             }
 
             $buildPath = $buildFile.DirectoryName
@@ -369,6 +404,7 @@ jobs:
 
       - name: Prepare Build BAT for GitHub Actions
         if: steps.detect.outputs.method == 'bat'
+        id: prepare_bat
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -406,7 +442,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $buildPath = "${{ steps.detect.outputs.build_path }}"
-          $preparedBat = "${{ steps.detect.outputs.build_path }}\GITHUB_ACTIONS_BUILD.bat"
+          $preparedBat = "${{ steps.prepare_bat.outputs.prepared_bat }}"
           $logRoot = "${{ steps.init.outputs.log_root }}"
           $logFile = Join-Path $logRoot "build.log"
 
@@ -626,13 +662,70 @@ jobs:
           }
 
           $safeModule = $module -replace '[^A-Za-z0-9_.-]', '_'
-          $pythonVersion = (python -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')").Trim()
-          $artifactName = "${safeModule}_Python${pythonVersion}_Standalone"
+          $pythonVersion = (
+            python -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')"
+          ).Trim()
 
-          # Upload the directory itself. actions/upload-artifact creates the
-          # single downloadable ZIP, so the result is no longer ZIP-inside-ZIP.
+          $appName = $safeModule
+          $appVersion = "unknown"
+          $appCommit = "unknown"
+
+          $versionFile = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Filter "version.json" -ErrorAction SilentlyContinue |
+            Sort-Object { $_.FullName.Length }, FullName |
+            Select-Object -First 1
+
+          if ($versionFile) {
+            try {
+              $metadata = Get-Content -LiteralPath $versionFile.FullName -Raw | ConvertFrom-Json
+
+              if ($metadata.artifact_base_name) {
+                $appName = [string]$metadata.artifact_base_name
+              }
+              elseif ($metadata.application) {
+                $appName = [string]$metadata.application
+              }
+
+              if ($metadata.version) {
+                $appVersion = [string]$metadata.version
+              }
+
+              if ($metadata.commit) {
+                $appCommit = [string]$metadata.commit
+              }
+
+              Write-Host "Version metadata loaded from: $($versionFile.FullName)"
+            }
+            catch {
+              Write-Warning "version.json could not be parsed. Falling back to the Source ZIP name."
+            }
+          }
+
+          if ($appVersion -eq "unknown") {
+            $sourceZipName = [System.IO.Path]::GetFileNameWithoutExtension(
+              "${{ steps.detect.outputs.source_zip }}"
+            )
+
+            if ($sourceZipName -match '(?i)(commit\d+(?:[_-]r\d+)?)') {
+              $appCommit = $Matches[1]
+            }
+
+            $appVersion = $sourceZipName
+          }
+
+          $safeAppName = $appName -replace '[^A-Za-z0-9_.-]', '_'
+          $safeVersion = $appVersion -replace '[^A-Za-z0-9_.-]', '_'
+          $safeCommit = $appCommit -replace '[^A-Za-z0-9_.-]', '_'
+
+          $artifactName = "${safeAppName}_${safeVersion}_${safeCommit}_Python${pythonVersion}_Standalone"
+          $artifactName = $artifactName -replace '_+', '_'
+          $artifactName = $artifactName.Trim('_')
+
+          # Upload the application contents directly.
+          # actions/upload-artifact creates the single downloadable ZIP.
           "artifact_name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "artifact_path=$packageRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          Write-Host "Artifact name: $artifactName"
 
           Write-Host "Simple artifact directory prepared: $packageRoot"
           Write-Host "Primary EXE: $($packagedExeFiles[0].FullName)"
