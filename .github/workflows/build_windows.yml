@@ -1,4 +1,4 @@
-name: Build Selected Module RC1
+name: Build Selected Module RC1 Complete Package
 
 on:
   workflow_dispatch:
@@ -358,44 +358,136 @@ jobs:
             --output-filename="${{ steps.meta.outputs.exe_name }}" `
             "${{ steps.meta.outputs.entry_point }}"
 
-      - name: Locate build output
+      - name: Locate and validate build output
         id: output
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
+          $ErrorActionPreference = "Stop"
           $sourceDir = (Get-Location).Path
+          $appName = "${{ steps.meta.outputs.app_name }}"
+          $exeName = "${{ steps.meta.outputs.exe_name }}"
+          $buildMode = "${{ steps.meta.outputs.build_mode }}"
+          $buildEngine = "${{ steps.meta.outputs.build_engine }}"
 
-          $exe = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.exe" |
-            Where-Object {
-              $_.FullName -notmatch "\\(venv|\.venv|site-packages|__pycache__)\\" -and
-              $_.Name -notmatch "^(python|pip|windeployqt)"
-            } |
-            Sort-Object LastWriteTimeUtc -Descending |
-            Select-Object -First 1
+          $outputDir = $null
+          $mainExe = $null
 
-          if (-not $exe) {
-            throw "Build completed, but no EXE was found."
+          if ($buildMode -eq "spec") {
+            $distRoot = Join-Path $sourceDir "dist"
+            if (Test-Path $distRoot) {
+              foreach ($dir in (Get-ChildItem $distRoot -Directory | Sort-Object LastWriteTimeUtc -Descending)) {
+                $exe = Get-ChildItem $dir.FullName -File -Filter "*.exe" |
+                  Where-Object { $_.Name -notmatch "^(python|pip|windeployqt)" } |
+                  Select-Object -First 1
+                if ($exe) {
+                  $outputDir = $dir.FullName
+                  $mainExe = $exe.FullName
+                  break
+                }
+              }
+
+              if (-not $mainExe) {
+                $exe = Get-ChildItem $distRoot -File -Filter "*.exe" |
+                  Where-Object { $_.Name -notmatch "^(python|pip|windeployqt)" } |
+                  Sort-Object LastWriteTimeUtc -Descending |
+                  Select-Object -First 1
+                if ($exe) {
+                  $outputDir = $distRoot
+                  $mainExe = $exe.FullName
+                }
+              }
+            }
+          }
+          elseif ($buildEngine -eq "nuitka_standalone") {
+            $distRoot = Join-Path $sourceDir "dist_nuitka"
+            if (Test-Path $distRoot) {
+              $distFolder = Get-ChildItem $distRoot -Directory |
+                Where-Object { $_.Name -like "*.dist" } |
+                Sort-Object LastWriteTimeUtc -Descending |
+                Select-Object -First 1
+              if ($distFolder) {
+                $outputDir = $distFolder.FullName
+                $preferredExe = Join-Path $outputDir $exeName
+                if (Test-Path $preferredExe) {
+                  $mainExe = $preferredExe
+                } else {
+                  $exe = Get-ChildItem $outputDir -File -Filter "*.exe" |
+                    Where-Object { $_.Name -notmatch "^(python|pip|windeployqt)" } |
+                    Select-Object -First 1
+                  if ($exe) { $mainExe = $exe.FullName }
+                }
+              }
+            }
+          }
+          else {
+            $namedDir = Join-Path (Join-Path $sourceDir "dist") $appName
+            if (Test-Path $namedDir) {
+              $outputDir = $namedDir
+              $preferredExe = Join-Path $namedDir "$appName.exe"
+              if (Test-Path $preferredExe) {
+                $mainExe = $preferredExe
+              } else {
+                $exe = Get-ChildItem $namedDir -File -Filter "*.exe" |
+                  Where-Object { $_.Name -notmatch "^(python|pip|windeployqt)" } |
+                  Select-Object -First 1
+                if ($exe) { $mainExe = $exe.FullName }
+              }
+            }
           }
 
-          "exe_path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
-          "output_dir=$($exe.Directory.FullName)" >> $env:GITHUB_OUTPUT
+          if (-not $outputDir -or -not $mainExe) {
+            Write-Host "EXE candidates:"
+            Get-ChildItem $sourceDir -Recurse -File -Filter "*.exe" |
+              Where-Object { $_.FullName -notmatch "\\(venv|\.venv|site-packages|__pycache__)\\" } |
+              ForEach-Object { Write-Host " - $($_.FullName)" }
+            throw "A complete application output folder with a startup EXE could not be identified."
+          }
 
-      - name: Stage single-layer Artifact
+          $fileCount = (Get-ChildItem $outputDir -Recurse -File).Count
+          if ($fileCount -lt 2) {
+            throw "Output folder appears incomplete: only $fileCount file(s) found."
+          }
+
+          Write-Host "Startup EXE : $mainExe"
+          Write-Host "Output dir  : $outputDir"
+          Write-Host "File count  : $fileCount"
+
+          "exe_path=$mainExe" >> $env:GITHUB_OUTPUT
+          "output_dir=$outputDir" >> $env:GITHUB_OUTPUT
+          "file_count=$fileCount" >> $env:GITHUB_OUTPUT
+
+      - name: Stage complete application folder
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
         run: |
+          $ErrorActionPreference = "Stop"
           $package = "artifact_payload"
           Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $package | Out-Null
 
           $outputDir = "${{ steps.output.outputs.output_dir }}"
-          Copy-Item "$outputDir\*" $package -Recurse -Force
+          $mainExe = "${{ steps.output.outputs.exe_path }}"
 
-          foreach ($name in @("README.md", "version.json")) {
-            $candidate = Get-ChildItem -Path (Get-Location).Path -Recurse -File -Filter $name |
+          Copy-Item -Path (Join-Path $outputDir "*") -Destination $package -Recurse -Force
+
+          $stagedExe = Join-Path $package (Split-Path $mainExe -Leaf)
+          if (-not (Test-Path $stagedExe)) {
+            throw "Startup EXE was not copied into Artifact payload."
+          }
+
+          foreach ($name in @(
+            "README.md",
+            "version.json",
+            "vendor_sdk_config.json",
+            "artifact_learning_defaults.json",
+            "tracker_position_defaults.json"
+          )) {
+            $candidate = Get-ChildItem (Get-Location).Path -Recurse -File -Filter $name |
+              Where-Object { $_.FullName -notmatch "\\(build|dist|artifact_payload)\\" } |
               Select-Object -First 1
             if ($candidate) {
-              Copy-Item $candidate.FullName "$package\$name" -Force
+              Copy-Item $candidate.FullName (Join-Path $package $name) -Force
             }
           }
 
@@ -409,9 +501,19 @@ jobs:
             "BuildMode=${{ steps.meta.outputs.build_mode }}",
             "Engine=${{ steps.meta.outputs.build_engine }}",
             "EntryPoint=${{ steps.meta.outputs.entry_point }}",
+            "StartupExe=$(Split-Path $mainExe -Leaf)",
+            "OutputFiles=${{ steps.output.outputs.file_count }}",
             "Python=3.13",
             "BuildDateUTC=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
           )
+
+          $stagedCount = (Get-ChildItem $package -Recurse -File).Count
+          if ($stagedCount -lt 2) {
+            throw "Artifact staging is incomplete."
+          }
+
+          Write-Host "Artifact startup EXE: $stagedExe"
+          Write-Host "Artifact file count : $stagedCount"
 
       - name: Upload versioned Artifact
         uses: actions/upload-artifact@v4
