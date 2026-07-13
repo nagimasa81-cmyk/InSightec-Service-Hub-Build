@@ -519,41 +519,90 @@ jobs:
 
           $standaloneFound = $false
 
-          foreach ($dist in $distDirs) {
-            $exe = Get-ChildItem -LiteralPath $dist.FullName -Recurse -File -Filter *.exe |
-              Select-Object -First 1
+          # Keep the downloadable artifact simple:
+          # GitHub already compresses every uploaded artifact into one ZIP.
+          # Therefore, copy the standalone CONTENTS directly into packageRoot
+          # instead of creating and uploading another ZIP.
 
-            if (-not $exe) {
-              "Skipping .dist without EXE: $($dist.FullName)" |
-                Tee-Object -FilePath $packageLog -Append
-              continue
+          $nuitkaCandidates = @(
+            foreach ($dist in $distDirs) {
+              $exe = Get-ChildItem -LiteralPath $dist.FullName -Recurse -File -Filter *.exe |
+                Select-Object -First 1
+              if ($exe) {
+                [PSCustomObject]@{
+                  Directory = $dist
+                  Exe = $exe
+                  Modified = $dist.LastWriteTimeUtc
+                }
+              }
+              else {
+                "Skipping .dist without EXE: $($dist.FullName)" |
+                  Tee-Object -FilePath $packageLog -Append
+              }
             }
+          ) | Sort-Object Modified -Descending
 
-            $target = Join-Path $packageRoot $dist.Name
-            Copy-Item -LiteralPath $dist.FullName -Destination $target -Recurse -Force
+          if ($nuitkaCandidates.Count -gt 0) {
+            $selected = $nuitkaCandidates[0]
 
-            "Collected Nuitka standalone folder: $($dist.FullName)" |
+            Get-ChildItem -LiteralPath $selected.Directory.FullName -Force |
+              ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination $packageRoot -Recurse -Force
+              }
+
+            "Collected Nuitka standalone contents: $($selected.Directory.FullName)" |
               Tee-Object -FilePath $packageLog -Append
+
+            if ($nuitkaCandidates.Count -gt 1) {
+              "Multiple .dist folders were found. Used newest: $($selected.Directory.FullName)" |
+                Tee-Object -FilePath $packageLog -Append
+            }
 
             $standaloneFound = $true
           }
 
-          foreach ($dist in $pyInstallerDirs) {
-            $exeFiles = @(
-              Get-ChildItem -LiteralPath $dist.FullName -Recurse -File -Filter *.exe
-            )
+          if (-not $standaloneFound) {
+            $pyInstallerCandidates = @(
+              foreach ($dist in $pyInstallerDirs) {
+                $exeFiles = @(
+                  Get-ChildItem -LiteralPath $dist.FullName -Recurse -File -Filter *.exe
+                )
+                if ($exeFiles.Count -gt 0) {
+                  [PSCustomObject]@{
+                    Directory = $dist
+                    Modified = $dist.LastWriteTimeUtc
+                  }
+                }
+              }
+            ) | Sort-Object Modified -Descending
 
-            if ($exeFiles.Count -eq 0) {
-              continue
+            if ($pyInstallerCandidates.Count -gt 0) {
+              $selectedDist = $pyInstallerCandidates[0].Directory
+              $distChildren = @(
+                Get-ChildItem -LiteralPath $selectedDist.FullName -Force |
+                  Where-Object { $_.Name -ne "__pycache__" }
+              )
+
+              # PyInstaller often creates dist\AppName\AppName.exe.
+              # If dist contains one application folder, flatten that folder.
+              if ($distChildren.Count -eq 1 -and $distChildren[0].PSIsContainer) {
+                Get-ChildItem -LiteralPath $distChildren[0].FullName -Force |
+                  ForEach-Object {
+                    Copy-Item -LiteralPath $_.FullName -Destination $packageRoot -Recurse -Force
+                  }
+                "Collected flattened PyInstaller application folder: $($distChildren[0].FullName)" |
+                  Tee-Object -FilePath $packageLog -Append
+              }
+              else {
+                foreach ($child in $distChildren) {
+                  Copy-Item -LiteralPath $child.FullName -Destination $packageRoot -Recurse -Force
+                }
+                "Collected PyInstaller dist contents: $($selectedDist.FullName)" |
+                  Tee-Object -FilePath $packageLog -Append
+              }
+
+              $standaloneFound = $true
             }
-
-            $target = Join-Path $packageRoot "dist"
-            Copy-Item -LiteralPath $dist.FullName -Destination $target -Recurse -Force
-
-            "Collected PyInstaller dist folder: $($dist.FullName)" |
-              Tee-Object -FilePath $packageLog -Append
-
-            $standaloneFound = $true
           }
 
           if (-not $standaloneFound) {
@@ -567,28 +616,28 @@ jobs:
             throw "No valid Nuitka .dist or PyInstaller dist directory was found."
           }
 
+          $packagedExeFiles = @(
+            Get-ChildItem -LiteralPath $packageRoot -Recurse -File -Filter *.exe
+          )
+          if ($packagedExeFiles.Count -eq 0) {
+            throw "Packaging completed, but no EXE exists in: $packageRoot"
+          }
+
           $safeModule = $module -replace '[^A-Za-z0-9_.-]', '_'
           $pythonVersion = (python -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')").Trim()
           $artifactName = "${safeModule}_Python${pythonVersion}_Standalone"
-          $zipPath = Join-Path "${{ steps.init.outputs.output_root }}" "$artifactName.zip"
 
-          if (Test-Path -LiteralPath $zipPath) {
-            Remove-Item -LiteralPath $zipPath -Force
-          }
-
-          Compress-Archive `
-            -Path (Join-Path $packageRoot "*") `
-            -DestinationPath $zipPath `
-            -Force
-
-          if (!(Test-Path -LiteralPath $zipPath)) {
-            throw "Distribution ZIP was not created: $zipPath"
-          }
-
+          # Upload the directory itself. actions/upload-artifact creates the
+          # single downloadable ZIP, so the result is no longer ZIP-inside-ZIP.
           "artifact_name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "artifact_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "artifact_path=$packageRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          Write-Host "Standalone distribution created: $zipPath"
+          Write-Host "Simple artifact directory prepared: $packageRoot"
+          Write-Host "Primary EXE: $($packagedExeFiles[0].FullName)"
+          Write-Host "Downloaded artifact will contain these files directly:"
+          Get-ChildItem -LiteralPath $packageRoot -Force |
+            Select-Object Name, Length, LastWriteTime |
+            Format-Table -AutoSize
 
       - name: Upload Build Logs
         if: always()
@@ -606,4 +655,6 @@ jobs:
           name: ${{ steps.package.outputs.artifact_name }}
           path: ${{ steps.package.outputs.artifact_path }}
           if-no-files-found: error
+          include-hidden-files: true
+          compression-level: 6
           retention-days: 14
