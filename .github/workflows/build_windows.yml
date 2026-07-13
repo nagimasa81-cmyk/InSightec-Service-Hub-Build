@@ -1,4 +1,4 @@
-name: Build MRI Raw FFT Explorer v0.8.4 Commit0008 R5
+name: Build MRI Raw FFT Explorer v0.8.5 Commit0008 R6 Tracker Position
 
 on:
   workflow_dispatch:
@@ -26,8 +26,8 @@ jobs:
     timeout-minutes: 90
     env:
       APP_NAME: "MRI_Raw_FFT_Explorer"
-      APP_VERSION: "0.8.4"
-      APP_COMMIT: "Commit0008_R5"
+      APP_VERSION: "0.8.5"
+      APP_COMMIT: "Commit0008_R6"
       PYTHON_VERSION: "3.13"
       PYTHONUTF8: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -279,3 +279,4 @@ jobs:
           include-hidden-files: true
           compression-level: 6
           retention-days: 14
+
