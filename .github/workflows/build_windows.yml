@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 Complete Package
+name: Build Selected Module RC1 Complete Package R2 Short Paths
 
 on:
   workflow_dispatch:
@@ -335,10 +335,26 @@ jobs:
               }
           }
 
-          foreach ($package in @("pydicom", "PySide6", "pyqtgraph", "matplotlib", "numpy", "openpyxl")) {
-            python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('$package') else 1)"
+          # Do not use --collect-all for PySide6, NumPy, Matplotlib, pyqtgraph,
+          # or openpyxl. Their PyInstaller hooks already collect the imported
+          # runtime modules. collect-all would include unrelated Qt QML examples,
+          # designer images, and very long paths that can fail on Windows extraction.
+          python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('pydicom') else 1)"
+          if ($LASTEXITCODE -eq 0) {
+            $args = @("--collect-all", "pydicom") + $args
+          }
+
+          # Add only common optional imports that are sometimes loaded dynamically.
+          foreach ($hidden in @(
+            "PySide6.QtCore",
+            "PySide6.QtGui",
+            "PySide6.QtWidgets",
+            "pyqtgraph",
+            "openpyxl"
+          )) {
+            python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('$hidden') else 1)"
             if ($LASTEXITCODE -eq 0) {
-              $args = @("--collect-all", $package) + $args
+              $args = @("--hidden-import", $hidden) + $args
             }
           }
 
@@ -507,9 +523,25 @@ jobs:
             "BuildDateUTC=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
           )
 
-          $stagedCount = (Get-ChildItem $package -Recurse -File).Count
+          $stagedFiles = Get-ChildItem $package -Recurse -File
+          $stagedCount = $stagedFiles.Count
           if ($stagedCount -lt 2) {
             throw "Artifact staging is incomplete."
+          }
+
+          # Warn about unusually long relative paths before upload. Keeping the
+          # relative payload path below 170 characters leaves room for the user's
+          # extraction folder and the Artifact ZIP name.
+          $longPaths = @()
+          foreach ($file in $stagedFiles) {
+            $relative = $file.FullName.Substring((Resolve-Path $package).Path.Length).TrimStart('\')
+            if ($relative.Length -gt 170) {
+              $longPaths += $relative
+            }
+          }
+          if ($longPaths.Count -gt 0) {
+            Write-Warning "Artifact contains $($longPaths.Count) long relative path(s)."
+            $longPaths | Select-Object -First 20 | ForEach-Object { Write-Warning "Long path: $_" }
           }
 
           Write-Host "Artifact startup EXE: $stagedExe"
@@ -518,7 +550,7 @@ jobs:
       - name: Upload versioned Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.artifact_prefix }}_${{ steps.meta.outputs.app_version }}_${{ steps.meta.outputs.app_commit }}_${{ steps.meta.outputs.build_engine }}
+          name: ${{ steps.source.outputs.module_name }}_${{ steps.meta.outputs.app_version }}_${{ steps.meta.outputs.app_commit }}
           path: ${{ steps.source.outputs.source_dir }}/artifact_payload/*
           include-hidden-files: true
           if-no-files-found: error
