@@ -1,10 +1,19 @@
-name: Universal Module Build v4
+name: Build Selected Module RC1
 
 on:
   workflow_dispatch:
     inputs:
+      module_name:
+        description: "Module folder name under Module/ (example: MRI_Raw_FFT_Explorer)"
+        required: true
+        type: string
+      source_zip:
+        description: "Optional exact SOURCE ZIP filename. Leave blank to use the latest name in the selected module."
+        required: false
+        default: ""
+        type: string
       build_engine:
-        description: Build engine
+        description: "Build engine"
         required: true
         default: auto
         type: choice
@@ -13,8 +22,22 @@ on:
           - fast_pyinstaller
           - nuitka_standalone
 
+  workflow_call:
+    inputs:
+      module_name:
+        required: true
+        type: string
+      source_zip:
+        required: false
+        default: ""
+        type: string
+      build_engine:
+        required: false
+        default: fast_pyinstaller
+        type: string
+
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
+  group: build-selected-${{ inputs.module_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,33 +52,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve latest SOURCE ZIP
+      - name: Resolve selected module source
         id: source
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $root = $env:GITHUB_WORKSPACE
 
-          $zip = Get-ChildItem -Path $root -Recurse -File -Filter "*_SOURCE.zip" |
-            Sort-Object LastWriteTimeUtc -Descending |
-            Select-Object -First 1
-
-          if (-not $zip) {
-            throw "No *_SOURCE.zip file was found in the repository."
+          $moduleName = "${{ inputs.module_name }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($moduleName)) {
+            throw "module_name is required."
           }
 
-          $sourceDir = Join-Path $env:RUNNER_TEMP "resolved_source"
+          $moduleDir = Join-Path $env:GITHUB_WORKSPACE "Module\$moduleName"
+          if (-not (Test-Path $moduleDir)) {
+            Write-Host "Available module folders:"
+            Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE "Module") -Directory |
+              ForEach-Object { Write-Host " - $($_.Name)" }
+            throw "Module folder was not found: $moduleDir"
+          }
+
+          $requestedZip = "${{ inputs.source_zip }}".Trim()
+          if (-not [string]::IsNullOrWhiteSpace($requestedZip)) {
+            $zip = Get-ChildItem -Path $moduleDir -Recurse -File |
+              Where-Object { $_.Name -eq $requestedZip } |
+              Select-Object -First 1
+            if (-not $zip) {
+              throw "Requested SOURCE ZIP was not found in selected module: $requestedZip"
+            }
+          } else {
+            # Git checkout timestamps are not reliable, so latest is selected by filename.
+            $zip = Get-ChildItem -Path $moduleDir -Recurse -File -Filter "*_SOURCE.zip" |
+              Sort-Object Name -Descending |
+              Select-Object -First 1
+          }
+
+          if (-not $zip) {
+            throw "No *_SOURCE.zip was found under: $moduleDir"
+          }
+
+          $sourceDir = Join-Path $env:RUNNER_TEMP "selected_module_source"
           Remove-Item $sourceDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath $sourceDir -Force
 
-          Write-Host "Selected SOURCE ZIP: $($zip.FullName)"
-          Write-Host "Extracted to: $sourceDir"
+          Write-Host "Selected module : $moduleName"
+          Write-Host "Selected ZIP    : $($zip.FullName)"
+          Write-Host "Extracted to    : $sourceDir"
 
+          "module_name=$moduleName" >> $env:GITHUB_OUTPUT
+          "module_dir=$moduleDir" >> $env:GITHUB_OUTPUT
           "source_dir=$sourceDir" >> $env:GITHUB_OUTPUT
           "source_zip_name=$($zip.BaseName)" >> $env:GITHUB_OUTPUT
 
-      - name: Resolve metadata, entry point, and build strategy
+      - name: Resolve metadata and entry point
         id: meta
         shell: pwsh
         working-directory: ${{ steps.source.outputs.source_dir }}
@@ -63,18 +112,6 @@ jobs:
           $ErrorActionPreference = "Stop"
           $sourceDir = (Get-Location).Path
           $zipBase = "${{ steps.source.outputs.source_zip_name }}" -replace "_SOURCE$", ""
-
-          $meta = $null
-          $versionFile = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "version.json" |
-            Select-Object -First 1
-          if ($versionFile) {
-            try {
-              $meta = Get-Content $versionFile.FullName -Raw | ConvertFrom-Json
-              Write-Host "Using metadata: $($versionFile.FullName)"
-            } catch {
-              Write-Warning "version.json could not be parsed. Automatic fallback will be used."
-            }
-          }
 
           function Value-Or {
             param([object]$Value, [string]$Fallback)
@@ -84,7 +121,19 @@ jobs:
             return $text
           }
 
-          $fallbackApp = $zipBase
+          $meta = $null
+          $versionFile = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "version.json" |
+            Select-Object -First 1
+          if ($versionFile) {
+            try {
+              $meta = Get-Content $versionFile.FullName -Raw | ConvertFrom-Json
+              Write-Host "Using version metadata: $($versionFile.FullName)"
+            } catch {
+              Write-Warning "version.json parse failed. Falling back to ZIP filename."
+            }
+          }
+
+          $fallbackApp = "${{ steps.source.outputs.module_name }}"
           $fallbackVersion = "Unknown"
           $fallbackCommit = "Unknown"
 
@@ -105,35 +154,28 @@ jobs:
           $entryPoint = Value-Or $meta.entry_point ""
           $preferredEngine = Value-Or $meta.build_engine "fast_pyinstaller"
 
-          $requestedEngine = "${{ github.event.inputs.build_engine }}"
-          if ([string]::IsNullOrWhiteSpace($requestedEngine) -or $requestedEngine -eq "auto") {
-            $buildEngine = $preferredEngine
-          } else {
-            $buildEngine = $requestedEngine
-          }
+          $requestedEngine = "${{ inputs.build_engine }}"
+          $buildEngine = if ($requestedEngine -eq "auto") { $preferredEngine } else { $requestedEngine }
           if ($buildEngine -notin @("fast_pyinstaller", "nuitka_standalone")) {
             $buildEngine = "fast_pyinstaller"
           }
 
-          # BAT files are intentionally ignored in v4.
-          # First prefer a valid SPEC file.
+          # BAT files are intentionally ignored.
           $specFile = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.spec" |
             Where-Object { $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages)\\" } |
-            Sort-Object LastWriteTimeUtc -Descending |
+            Sort-Object Name -Descending |
             Select-Object -First 1
 
           $buildMode = if ($specFile) { "spec" } else { "python" }
 
-          # Resolve entry point from metadata.
           if (-not [string]::IsNullOrWhiteSpace($entryPoint)) {
-            $entryCandidate = Join-Path $sourceDir $entryPoint
-            if (-not (Test-Path $entryCandidate)) {
+            $candidate = Join-Path $sourceDir $entryPoint
+            if (-not (Test-Path $candidate)) {
               Write-Warning "version.json entry point was not found: $entryPoint"
               $entryPoint = ""
             }
           }
 
-          # Resolve common Python filenames recursively.
           if ([string]::IsNullOrWhiteSpace($entryPoint)) {
             foreach ($name in @("app.py", "main.py", "run.py", "start.py", "launcher.py", "__main__.py")) {
               $candidate = Get-ChildItem -Path $sourceDir -Recurse -File -Filter $name |
@@ -146,7 +188,6 @@ jobs:
             }
           }
 
-          # Score every remaining Python file when names are non-standard.
           if ([string]::IsNullOrWhiteSpace($entryPoint)) {
             $bestFile = $null
             $bestScore = -1
@@ -154,7 +195,7 @@ jobs:
             $pythonFiles = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.py" |
               Where-Object {
                 $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages|tests?|examples?|__pycache__)\\" -and
-                $_.Name -notmatch "^(setup|version|vendor_|artifact_|tracker_)"
+                $_.Name -notmatch "^(setup|version|vendor_)"
               }
 
             foreach ($file in $pythonFiles) {
@@ -170,7 +211,6 @@ jobs:
               if ($content -match '\bdef\s+main\s*\(') { $score += 40 }
               if ($content -match '\.show\s*\(') { $score += 20 }
               if ($file.Name -match '(app|main|run|start|launcher|analyzer)') { $score += 20 }
-              if ($content -match 'PySide6|PyQt6|PyQt5|tkinter') { $score += 20 }
 
               if ($score -gt $bestScore) {
                 $bestScore = $score
@@ -188,7 +228,6 @@ jobs:
             throw "No valid Python entry point or PyInstaller SPEC was found."
           }
 
-          # Find the closest requirements file.
           $requirements = Get-ChildItem -Path $sourceDir -Recurse -File |
             Where-Object { $_.Name -match "^requirements.*\.txt$" } |
             Sort-Object @{
@@ -200,14 +239,13 @@ jobs:
             }, FullName |
             Select-Object -First 1
 
-          Write-Host "Application : $appName"
-          Write-Host "Version     : $appVersion"
-          Write-Host "Commit      : $appCommit"
-          Write-Host "Build mode  : $buildMode"
-          Write-Host "Entry point : $entryPoint"
-          Write-Host "SPEC file   : $($specFile.FullName)"
-          Write-Host "Engine      : $buildEngine"
-          Write-Host "Requirements: $($requirements.FullName)"
+          Write-Host "Application  : $appName"
+          Write-Host "Version      : $appVersion"
+          Write-Host "Commit       : $appCommit"
+          Write-Host "Build mode   : $buildMode"
+          Write-Host "Build engine : $buildEngine"
+          Write-Host "Entry point  : $entryPoint"
+          Write-Host "SPEC file    : $($specFile.FullName)"
 
           "app_name=$appName" >> $env:GITHUB_OUTPUT
           "app_version=$appVersion" >> $env:GITHUB_OUTPUT
@@ -278,7 +316,6 @@ jobs:
             $entry
           )
 
-          # Include JSON, UI, icons, and common resources automatically.
           foreach ($pattern in @("*.json", "*.ui", "*.ico", "*.png", "*.jpg", "*.jpeg")) {
             Get-ChildItem -Path $sourceDir -Recurse -File -Filter $pattern |
               Where-Object { $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages)\\" } |
@@ -331,9 +368,6 @@ jobs:
             throw "Build completed, but no EXE was found."
           }
 
-          Write-Host "Detected EXE: $($exe.FullName)"
-          Write-Host "Output folder: $($exe.Directory.FullName)"
-
           "exe_path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
           "output_dir=$($exe.Directory.FullName)" >> $env:GITHUB_OUTPUT
 
@@ -357,6 +391,7 @@ jobs:
           }
 
           Set-Content -Path "$package\BUILD_INFO.txt" -Encoding UTF8 -Value @(
+            "Module=${{ steps.source.outputs.module_name }}",
             "Application=${{ steps.meta.outputs.app_name }}",
             "Version=${{ steps.meta.outputs.app_version }}",
             "Release=${{ steps.meta.outputs.app_commit }}",
