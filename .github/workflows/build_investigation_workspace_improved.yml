@@ -16,6 +16,7 @@ on:
           - InSightec_Service_hub
           - HUB
           - FileTypeBuilder
+          - FUSSIM
       source_zip:
         description: "Optional exact SOURCE ZIP filename. Leave blank to use the latest name in the selected module."
         required: false
