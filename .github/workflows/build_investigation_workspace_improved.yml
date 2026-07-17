@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - ExAna
           - FFT
           - Water_system_analyzer
           - WS_Investigation
