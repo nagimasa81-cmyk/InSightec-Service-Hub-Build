@@ -11,6 +11,7 @@ on:
           - Soni
           - ExAna
           - FFT
+          - trackerSNR
           - Water_system_analyzer
           - WS_Investigation
           - Log_explorer
