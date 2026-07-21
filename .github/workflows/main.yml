@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 Runtime Complete R5
+name: Build Selected Module RC1 Runtime Complete R6
 
 on:
   workflow_dispatch:
@@ -435,6 +435,9 @@ jobs:
               $nuitkaArgs += "--include-package=$package"
             }
           }
+          # pydicom imports JSON package resources (including data/urls.json).
+          # Code inclusion alone is insufficient for a Nuitka standalone build.
+          $nuitkaArgs += "--include-package-data=pydicom"
 
           # Mirror the PyInstaller step: bundle the same non-code assets so
           # the Nuitka engine does not silently ship an app missing its
@@ -454,6 +457,12 @@ jobs:
 
           python -m nuitka @nuitkaArgs
           if ($LASTEXITCODE -ne 0) { throw "Nuitka build failed with exit code $LASTEXITCODE" }
+
+          $pydicomUrls = Get-ChildItem -Path "dist_nuitka" -Recurse -File -Filter "*urls.json" | Select-Object -First 1
+          if (-not $pydicomUrls) {
+            throw "pydicom package data validation failed: urls.json is missing from the Nuitka output."
+          }
+          Write-Host "Validated pydicom package data: $($pydicomUrls.FullName)"
 
       - name: Locate and validate build output
         id: output
