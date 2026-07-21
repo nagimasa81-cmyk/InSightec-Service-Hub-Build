@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 Runtime Complete R4
+name: Build Selected Module RC1 Runtime Complete R5
 
 on:
   workflow_dispatch:
@@ -426,6 +426,15 @@ jobs:
             "--output-dir=dist_nuitka",
             "--output-filename=${{ steps.meta.outputs.exe_name }}"
           )
+
+          # Package pydicom and installed codec packages at build time.
+          # Decoder modules are not imported during application startup.
+          foreach ($package in @("pydicom", "pylibjpeg", "pylibjpeg_libjpeg", "pylibjpeg_openjpeg")) {
+            python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('$package') else 1)"
+            if ($LASTEXITCODE -eq 0) {
+              $nuitkaArgs += "--include-package=$package"
+            }
+          }
 
           # Mirror the PyInstaller step: bundle the same non-code assets so
           # the Nuitka engine does not silently ship an app missing its
