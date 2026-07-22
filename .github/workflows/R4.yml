@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 Runtime Complete R4 - Build Config and Script Support
+name: Build Selected Module RC1 Runtime Complete R5 - Source Root Auto Detect
 
 on:
   workflow_dispatch:
@@ -116,17 +116,65 @@ jobs:
             throw "No *_SOURCE.zip was found under: $moduleDir"
           }
 
-          $sourceDir = Join-Path $env:RUNNER_TEMP "selected_module_source"
-          Remove-Item $sourceDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
-          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $sourceDir -Force
+          $extractDir = Join-Path $env:RUNNER_TEMP "selected_module_source"
+          Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $extractDir -Force
+
+          # Detect the actual source root. SOURCE ZIPs may contain their files at
+          # the archive root or under one wrapper folder (for example csh_u14/).
+          # Prefer the directory that contains build_config.json, then score other
+          # build markers. This prevents configured paths such as BUILD_EXE.bat
+          # from being resolved against the wrong directory.
+          $candidateDirs = @($extractDir)
+          $candidateDirs += Get-ChildItem -Path $extractDir -Recurse -Directory |
+            Where-Object { $_.FullName -notmatch "\\(build|dist|dist_nuitka|venv|\.venv|site-packages|__pycache__)\\" } |
+            ForEach-Object { $_.FullName }
+
+          $bestRoot = $extractDir
+          $bestScore = -1
+          foreach ($candidateDir in ($candidateDirs | Select-Object -Unique)) {
+            $score = 0
+            if (Test-Path (Join-Path $candidateDir "build_config.json") -PathType Leaf) { $score += 1000 }
+            if (Test-Path (Join-Path $candidateDir "version.json") -PathType Leaf) { $score += 200 }
+            if (Test-Path (Join-Path $candidateDir "BUILD_EXE.bat") -PathType Leaf) { $score += 180 }
+            if (Test-Path (Join-Path $candidateDir "build.bat") -PathType Leaf) { $score += 120 }
+            if (Test-Path (Join-Path $candidateDir "main.py") -PathType Leaf) { $score += 80 }
+            if (Test-Path (Join-Path $candidateDir "hub_app.py") -PathType Leaf) { $score += 80 }
+            if (Test-Path (Join-Path $candidateDir "requirements.txt") -PathType Leaf) { $score += 40 }
+
+            if ($score -gt $bestScore) {
+              $bestScore = $score
+              $bestRoot = $candidateDir
+            }
+          }
+
+          # If no marker was found but there is exactly one top-level directory,
+          # treat that folder as the source root.
+          if ($bestScore -le 0) {
+            $topLevelDirs = @(Get-ChildItem -Path $extractDir -Directory)
+            $topLevelFiles = @(Get-ChildItem -Path $extractDir -File)
+            if ($topLevelDirs.Count -eq 1 -and $topLevelFiles.Count -eq 0) {
+              $bestRoot = $topLevelDirs[0].FullName
+            }
+          }
+
+          $sourceDir = (Resolve-Path $bestRoot).Path
 
           Write-Host "Selected module : $moduleName"
           Write-Host "Selected ZIP    : $($zip.FullName)"
-          Write-Host "Extracted to    : $sourceDir"
+          Write-Host "Extracted to    : $extractDir"
+          Write-Host "Detected root   : $sourceDir"
+          Write-Host "Root score      : $bestScore"
+          Write-Host "Root markers:"
+          foreach ($marker in @("build_config.json", "version.json", "BUILD_EXE.bat", "build.bat", "main.py", "hub_app.py")) {
+            $markerPath = Join-Path $sourceDir $marker
+            Write-Host " - $marker = $(Test-Path $markerPath -PathType Leaf)"
+          }
 
           "module_name=$moduleName" >> $env:GITHUB_OUTPUT
           "module_dir=$moduleDir" >> $env:GITHUB_OUTPUT
+          "extract_dir=$extractDir" >> $env:GITHUB_OUTPUT
           "source_dir=$sourceDir" >> $env:GITHUB_OUTPUT
           "source_zip_name=$($zip.BaseName)" >> $env:GITHUB_OUTPUT
 
@@ -230,7 +278,21 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($entryOverride) -and -not [string]::IsNullOrWhiteSpace($configuredScript)) {
             $scriptCandidate = Join-Path $sourceDir $configuredScript
             if (-not (Test-Path $scriptCandidate -PathType Leaf)) {
-              throw "Configured build script was not found: $configuredScript"
+              $scriptLeaf = Split-Path $configuredScript -Leaf
+              $recursiveMatches = @(Get-ChildItem -Path $sourceDir -Recurse -File -Filter $scriptLeaf |
+                Where-Object { $_.FullName -notmatch "\\(build|dist|dist_nuitka|venv|\.venv|site-packages)\\" })
+              if ($recursiveMatches.Count -eq 1) {
+                $scriptCandidate = $recursiveMatches[0].FullName
+                Write-Warning "Configured build script was found recursively: $scriptCandidate"
+              } elseif ($recursiveMatches.Count -gt 1) {
+                Write-Host "Build script candidates:"
+                $recursiveMatches | ForEach-Object { Write-Host " - $($_.FullName)" }
+                throw "Configured build script is ambiguous: $configuredScript"
+              } else {
+                Write-Host "Files at detected source root:"
+                Get-ChildItem -Path $sourceDir -Force | ForEach-Object { Write-Host " - $($_.Name)" }
+                throw "Configured build script was not found under detected source root: $configuredScript"
+              }
             }
             $buildScript = Get-Item $scriptCandidate
           }
