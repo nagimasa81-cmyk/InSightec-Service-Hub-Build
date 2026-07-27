@@ -18,6 +18,7 @@ on:
           - Complaint_service_hub
           - InSightec_Service_hub
           - HUB
+          - DO Analysis
           - FileTypeBuilder
           - FUSSIM
           - SPC
