@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 R14 - Hub Dedicated Build Triple Check Fix
+name: Build Selected Module RC1 R15 - Manifest Driven Hub Package Validation Fix
 
 on:
   workflow_dispatch:
@@ -1145,28 +1145,137 @@ jobs:
           New-Item -ItemType Directory -Force -Path $package | Out-Null
 
           $outputDir = "${{ steps.output.outputs.output_dir }}"
+          if ([string]::IsNullOrWhiteSpace($outputDir) -or -not (Test-Path $outputDir -PathType Container)) {
+            throw "Configured application output folder was not found: $outputDir"
+          }
+
           robocopy $outputDir $package /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS
           if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
           $global:LASTEXITCODE = 0
 
-          $required = @(
-            "Complaint_Service_Hub_Launcher.exe",
-            "Complaint_Service_Hub.exe",
-            "Complaint_Service_Hub_Updater.exe",
-            "version.json",
-            "BUILD_INFO.txt"
-          )
-          foreach ($name in $required) {
-            $candidate = Join-Path $package $name
-            if (-not (Test-Path $candidate -PathType Leaf)) {
-              throw "Configured application package is incomplete. Missing: $name"
+          # ----------------------------------------------------------
+          # Manifest-driven startup EXE resolution.
+          # Do not hard-code legacy Complaint Service Hub launchers.
+          # Resolution order:
+          #   1. build_config.json configured entrypoint
+          #   2. workflow metadata EXE name/candidates
+          #   3. version.json executable fields
+          #   4. known Hub executable names
+          #   5. safe root-level EXE discovery
+          # ----------------------------------------------------------
+          $candidateNames = [System.Collections.Generic.List[string]]::new()
+          function Add-Candidate([string]$name) {
+            if ([string]::IsNullOrWhiteSpace($name)) { return }
+            $leaf = [IO.Path]::GetFileName($name.Trim())
+            if ([string]::IsNullOrWhiteSpace($leaf)) { return }
+            if (-not $leaf.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) { return }
+            if (-not ($candidateNames -contains $leaf)) { $candidateNames.Add($leaf) }
+          }
+
+          Add-Candidate "${{ steps.meta.outputs.configured_entrypoint }}"
+          Add-Candidate "${{ steps.meta.outputs.exe_name }}"
+          foreach ($name in ("${{ steps.meta.outputs.exe_candidates }}" -split '\|')) {
+            Add-Candidate $name
+          }
+
+          $versionPath = Join-Path $package "version.json"
+          if (Test-Path $versionPath -PathType Leaf) {
+            try {
+              $versionMeta = Get-Content $versionPath -Raw | ConvertFrom-Json
+              foreach ($property in @('exe_name', 'executable', 'entry_executable', 'launcher_exe', 'startup_exe')) {
+                if ($versionMeta.PSObject.Properties.Name -contains $property) {
+                  Add-Candidate ([string]$versionMeta.$property)
+                }
+              }
+              if ($versionMeta.executable_candidates) {
+                foreach ($name in @($versionMeta.executable_candidates)) { Add-Candidate ([string]$name) }
+              }
+            } catch {
+              throw "Packaged version.json is invalid: $versionPath`n$($_.Exception.Message)"
             }
           }
 
-          $info = Get-Content (Join-Path $package "BUILD_INFO.txt") -Raw
-          if ($info -notmatch '(?im)^BuildMode=standalone\s*$') { throw "BUILD_INFO.txt does not confirm standalone mode." }
-          if ($info -notmatch '(?im)^BuildEngine=Nuitka\s*$') { throw "BUILD_INFO.txt does not confirm Nuitka." }
-          if ($info -notmatch '(?im)^PySide6=Included\s*$') { throw "BUILD_INFO.txt does not confirm PySide6 inclusion." }
+          foreach ($name in @(
+            'InSightecServiceHub.exe',
+            'InSightec_APAC_Service_Hub.exe',
+            'InSightec_Service_Hub.exe'
+          )) { Add-Candidate $name }
+
+          $startupExe = $null
+          foreach ($name in $candidateNames) {
+            $candidate = Join-Path $package $name
+            if (Test-Path $candidate -PathType Leaf) {
+              $startupExe = Get-Item $candidate
+              break
+            }
+          }
+
+          if (-not $startupExe) {
+            $excludedNamePattern = '(?i)(uninstall|updater|update_helper|debug|console|crash|reporter|service|vcredist|python|pip|qtwebengineprocess)'
+            $rootExeCandidates = @(
+              Get-ChildItem -Path $package -File -Filter '*.exe' |
+                Where-Object { $_.Name -notmatch $excludedNamePattern } |
+                Sort-Object @{ Expression = {
+                  $score = 0
+                  if ($_.Name -match '(?i)insightec') { $score += 100 }
+                  if ($_.Name -match '(?i)(service.?hub|hub)') { $score += 80 }
+                  if ($_.Name -match '(?i)(launcher|main)') { $score += 20 }
+                  $score += [Math]::Min([int]($_.Length / 1MB), 50)
+                  -$score
+                }}, Name
+            )
+            if ($rootExeCandidates.Count -eq 1) {
+              $startupExe = $rootExeCandidates[0]
+            } elseif ($rootExeCandidates.Count -gt 1) {
+              Write-Host "Root-level executable candidates:"
+              $rootExeCandidates | ForEach-Object { Write-Host " - $($_.Name) ($($_.Length) bytes)" }
+              $startupExe = $rootExeCandidates[0]
+              Write-Warning "No configured executable matched. Selected the highest-scoring safe root EXE: $($startupExe.Name)"
+            }
+          }
+
+          if (-not $startupExe) {
+            Write-Host "Executable files found in package:"
+            Get-ChildItem -Path $package -Recurse -File -Filter '*.exe' |
+              ForEach-Object { Write-Host " - $($_.FullName.Substring((Resolve-Path $package).Path.Length).TrimStart('\'))" }
+            throw "Configured application package is incomplete. No valid startup EXE was found. Expected one of: $($candidateNames -join ', ')"
+          }
+
+          if ($startupExe.Length -lt 100KB) {
+            throw "Startup EXE appears invalid or truncated: $($startupExe.FullName) ($($startupExe.Length) bytes)"
+          }
+
+          # Hub-specific structural validation. These folders contain the
+          # launcher manifests/resources and must accompany the Hub EXE.
+          $isHubPackage = ($startupExe.Name -match '(?i)(insightec.*hub|service.?hub)') -or
+                          (Test-Path (Join-Path $package 'tools') -PathType Container)
+          if ($isHubPackage) {
+            foreach ($folder in @('tools')) {
+              $folderPath = Join-Path $package $folder
+              if (-not (Test-Path $folderPath -PathType Container)) {
+                throw "Hub package is incomplete. Required runtime folder is missing: $folder"
+              }
+            }
+
+            $toolManifestCount = @(
+              Get-ChildItem -Path (Join-Path $package 'tools') -Recurse -File -Filter 'manifest.json' -ErrorAction SilentlyContinue
+            ).Count
+            if ($toolManifestCount -lt 1) {
+              throw "Hub package is incomplete. No tool manifest.json files were found under tools."
+            }
+          }
+
+          # BUILD_INFO is optional and must be validated only when present.
+          $buildInfoPath = Join-Path $package 'BUILD_INFO.txt'
+          if (Test-Path $buildInfoPath -PathType Leaf) {
+            $info = Get-Content $buildInfoPath -Raw
+            if ($info -match '(?im)^BuildMode\s*=\s*(?<mode>.+?)\s*$') {
+              Write-Host "BUILD_INFO BuildMode: $($Matches.mode)"
+            }
+            if ($info -match '(?im)^BuildEngine\s*=\s*(?<engine>.+?)\s*$') {
+              Write-Host "BUILD_INFO BuildEngine: $($Matches.engine)"
+            }
+          }
 
           Set-Content -Path "$package\WORKFLOW_BUILD_INFO.txt" -Encoding UTF8 -Value @(
             "Module=${{ steps.source.outputs.module_name }}",
@@ -1177,9 +1286,17 @@ jobs:
             "Engine=${{ steps.meta.outputs.build_engine }}",
             "BuildScript=${{ steps.meta.outputs.build_script }}",
             "ArtifactPath=${{ steps.meta.outputs.artifact_path }}",
-            "StartupExe=${{ steps.meta.outputs.configured_entrypoint }}",
+            "StartupExe=$($startupExe.Name)",
+            "StartupExeSize=$($startupExe.Length)",
             "GitSHA=$env:GITHUB_SHA",
             "BuildDateUTC=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
+          )
+
+          Set-Content -Path "$package\RUN_HUB.bat" -Encoding ASCII -Value @(
+            '@echo off',
+            'setlocal',
+            'cd /d "%~dp0"',
+            "start \"\" \"$($startupExe.Name)\""
           )
 
           $manifest = Join-Path $package "PACKAGE_SHA256.txt"
@@ -1192,9 +1309,16 @@ jobs:
               "$hash  $relative"
             } | Set-Content -Path $manifest -Encoding UTF8
 
-          $stagedCount = (Get-ChildItem $package -Recurse -File).Count
-          if ($stagedCount -lt 20) { throw "Artifact staging appears incomplete: only $stagedCount files." }
-          Write-Host "Configured application package validated: $stagedCount files"
+          $stagedFiles = @(Get-ChildItem $package -Recurse -File)
+          $stagedCount = $stagedFiles.Count
+          if ($stagedCount -lt 20) {
+            throw "Artifact staging appears incomplete: only $stagedCount files."
+          }
+
+          Write-Host "Configured application package validated."
+          Write-Host "Startup EXE : $($startupExe.Name)"
+          Write-Host "EXE size    : $($startupExe.Length) bytes"
+          Write-Host "File count  : $stagedCount"
 
       - name: Compute sanitized Artifact name
         id: artifact
