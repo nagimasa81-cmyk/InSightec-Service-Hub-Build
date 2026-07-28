@@ -1,4 +1,4 @@
-name: Build InSightec APAC Service Hub RC5 - No Guide Release Packaging
+name: Build InSightec APAC Service Hub RC5.2 - No Guide AST Runtime Scan
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc5-${{ inputs.module_name }}-${{ github.ref }}
+  group: rc5-2-${{ inputs.module_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -57,7 +57,7 @@ jobs:
         id: build
         shell: pwsh
         run: |
-          & "$env:GITHUB_WORKSPACE\.github\scripts\build_hub_rc5_1.ps1" `
+          & "$env:GITHUB_WORKSPACE\.github\scripts\build_hub_rc5_2.ps1" `
             -ModuleName "${{ inputs.module_name }}" `
             -SourceZip "${{ inputs.source_zip }}"
       - name: Validate complete Hub package
@@ -92,10 +92,10 @@ jobs:
           if (-not (Test-Path -LiteralPath $startupExe -PathType Leaf)) { throw "Startup EXE missing: $startupExe" }
 
           $safe = "${{ inputs.module_name }}" -replace '[^A-Za-z0-9._-]','_'
-          $outDir = Join-Path $env:RUNNER_TEMP 'rc5_artifact'
+          $outDir = Join-Path $env:RUNNER_TEMP 'rc5_2_artifact'
           Remove-Item -LiteralPath $outDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-          $zip = Join-Path $outDir ($safe + '_RC5_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
+          $zip = Join-Path $outDir ($safe + '_RC5_2_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           [IO.Compression.ZipFile]::CreateFromDirectory($packageDir,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
@@ -110,7 +110,7 @@ jobs:
           } finally { $archive.Dispose() }
 
           "zip_path=$zip" >> $env:GITHUB_OUTPUT
-          "artifact_name=$($safe)_RC5_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
+          "artifact_name=$($safe)_RC5_2_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
 
       - name: Upload versioned artifact
         uses: actions/upload-artifact@v4
