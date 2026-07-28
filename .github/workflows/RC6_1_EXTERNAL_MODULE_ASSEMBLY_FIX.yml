@@ -1,0 +1,122 @@
+name: Build InSightec APAC Service Hub RC6.1 - Module Native Release Mode
+
+on:
+  workflow_dispatch:
+    inputs:
+      module_name:
+        description: Select Module
+        required: true
+        type: choice
+        options:
+          - InSightec_Service_hub
+          - Soni
+          - VIMeasure
+          - FFT
+          - trackerSNR
+          - DO_Analysis
+          - Log_explorer
+          - Complaint_service_hub
+      source_zip:
+        description: Optional SOURCE ZIP filename for the selected module
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-${{ inputs.module_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      INSIGHTEC_RELEASE_MODE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install common build dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pyinstaller nuitka ordered-set zstandard
+
+      - name: Build selected module and assemble complete Hub
+        id: build
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE\.github\scripts\build_hub_rc6_1.ps1" `
+            -ModuleName "${{ inputs.module_name }}" `
+            -SourceZip "${{ inputs.source_zip }}"
+      - name: Validate complete Hub package
+        if: ${{ inputs.module_name == 'InSightec_Service_hub' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $package = "${{ steps.build.outputs.package_dir }}"
+          $startup = "${{ steps.build.outputs.startup_exe }}"
+          if (-not (Test-Path -LiteralPath $startup -PathType Leaf)) { throw "Hub startup EXE is missing: $startup" }
+          $required = @('DOanalysis','TrackerSNR','LogExplorer','SonicationAnalysis','FUSImageExplore','VIMeasure')
+          foreach ($id in $required) {
+            $dir = Join-Path (Join-Path $package 'tools') $id
+            if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "Tool directory missing: $dir" }
+            $exe = Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*.exe' |
+              Where-Object { $_.Name -notmatch '(?i)(debug|console|uninstall|updater)' } |
+              Sort-Object Length -Descending | Select-Object -First 1
+            if (-not $exe) { throw "Tool EXE missing: $id" }
+            Write-Host ("[PASS] " + $id + " => " + $exe.FullName)
+          }
+          $report = Get-Content -LiteralPath (Join-Path $package 'tool_build_status.json') -Raw | ConvertFrom-Json
+          if (-not $report.all_ready -or $report.tools.Count -ne 6) { throw 'Tool build report is incomplete.' }
+
+      - name: Create distribution ZIP
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $packageDir = "${{ steps.build.outputs.package_dir }}"
+          $startupExe = "${{ steps.build.outputs.startup_exe }}"
+          if (-not (Test-Path -LiteralPath $packageDir -PathType Container)) { throw "Package directory missing: $packageDir" }
+          if (-not (Test-Path -LiteralPath $startupExe -PathType Leaf)) { throw "Startup EXE missing: $startupExe" }
+
+          $safe = "${{ inputs.module_name }}" -replace '[^A-Za-z0-9._-]','_'
+          $outDir = Join-Path $env:RUNNER_TEMP 'rc6_artifact'
+          Remove-Item -LiteralPath $outDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          $zip = Join-Path $outDir ($safe + '_RC6.1_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [IO.Compression.ZipFile]::CreateFromDirectory($packageDir,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            if ($archive.Entries.Count -eq 0) { throw 'Distribution ZIP is empty.' }
+            $relativeExe = [IO.Path]::GetRelativePath($packageDir,$startupExe).Replace('\','/')
+            $names = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
+            if ($names -notcontains $relativeExe) { throw "ZIP does not contain startup EXE: $relativeExe" }
+            if ($names -notcontains 'RUN_APPLICATION.bat') { throw 'ZIP does not contain RUN_APPLICATION.bat.' }
+            Write-Host ("ZIP entries: " + $archive.Entries.Count)
+          } finally { $archive.Dispose() }
+
+          "zip_path=$zip" >> $env:GITHUB_OUTPUT
+          "artifact_name=$($safe)_RC6.1_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload versioned artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.zip_path }}
+          if-no-files-found: error
+          retention-days: 14
