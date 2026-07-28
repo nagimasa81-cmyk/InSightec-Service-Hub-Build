@@ -1,4 +1,4 @@
-name: Build Selected Module RC2 - Clean Source Build
+name: Build Selected Module RC3 - Complete Hub with Integrated Tools - Clean Source Build
 
 on:
   workflow_dispatch:
@@ -442,6 +442,43 @@ jobs:
             $toolsDir = Join-Path $packageDir.FullName "tools"
             if (-not (Test-Path -LiteralPath $toolsDir -PathType Container)) {
               throw "Hub package is incomplete: tools folder is missing."
+            }
+
+            $requiredToolExecutables = @(
+              @{ Tool = "DO Analysis"; Relative = "DOanalysis\DO Analysis Qt Ver1.0.1.exe" },
+              @{ Tool = "TrackerSNR"; Relative = "TrackerSNR\TrackerSNR_CLEAN_EXE.exe" },
+              @{ Tool = "Log Explore"; Relative = "LogExplorer\LogMergeTool_NoExcel.exe" },
+              @{ Tool = "Sonication Analysis"; Relative = "SonicationAnalysis\Sonication_Replay_Engine.exe" },
+              @{ Tool = "FUS Image Explore"; Relative = "FUSImageExplore\MR_Image_Explorer_RC1.exe" },
+              @{ Tool = "VIMeasure"; Relative = "VIMeasure\VIMeasureAnalyzer.exe" }
+            )
+            $missingTools = @()
+            foreach ($required in $requiredToolExecutables) {
+              $toolExe = Join-Path $toolsDir $required.Relative
+              if (-not (Test-Path -LiteralPath $toolExe -PathType Leaf)) {
+                $missingTools += ($required.Tool + " => " + $toolExe)
+              } else {
+                $size = (Get-Item -LiteralPath $toolExe).Length
+                if ($size -lt 100KB) {
+                  $missingTools += ($required.Tool + " => EXE is unexpectedly small: " + $size + " bytes")
+                } else {
+                  Write-Host ("[PASS] Packaged tool: " + $required.Tool + " | " + [math]::Round($size / 1MB, 1) + " MB")
+                }
+              }
+            }
+            if ($missingTools.Count -gt 0) {
+              Write-Host "Incomplete integrated tool package:"
+              $missingTools | ForEach-Object { Write-Host ("  - " + $_) }
+              throw "Hub package is incomplete: one or more integrated tool EXEs are missing."
+            }
+
+            $toolBuildStatus = Join-Path $packageDir.FullName "tool_build_status.json"
+            if (-not (Test-Path -LiteralPath $toolBuildStatus -PathType Leaf)) {
+              throw "Hub package is incomplete: tool_build_status.json is missing."
+            }
+            $toolStatus = Get-Content -LiteralPath $toolBuildStatus -Raw | ConvertFrom-Json
+            if (-not $toolStatus.all_ready) {
+              throw "Integrated tool build report indicates an incomplete build."
             }
           }
 
