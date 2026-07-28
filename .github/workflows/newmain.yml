@@ -1,4 +1,4 @@
-name: Build InSightec APAC Service Hub RC4.2 - Exact Repository Module Mapping
+name: Build InSightec APAC Service Hub RC5 - No Guide Release Packaging
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc4-2-${{ inputs.module_name }}-${{ github.ref }}
+  group: rc5-${{ inputs.module_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -134,7 +134,7 @@ jobs:
               throw "No SOURCE ZIP was found in $ModuleDir"
             }
 
-            $workDir = Join-Path $env:RUNNER_TEMP ("rc4_zip_" + $WorkName)
+            $workDir = Join-Path $env:RUNNER_TEMP ("rc5_zip_" + $WorkName)
             Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue
             New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 
@@ -173,7 +173,7 @@ jobs:
           }
 
           function Expand-Source([string]$ZipPath, [string]$WorkName) {
-            $extractDir = Join-Path $env:RUNNER_TEMP ("rc4_extract_" + $WorkName)
+            $extractDir = Join-Path $env:RUNNER_TEMP ("rc5_extract_" + $WorkName)
             Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
             New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
             Expand-Archive -LiteralPath $ZipPath -DestinationPath $extractDir -Force
@@ -195,6 +195,219 @@ jobs:
               if ($found) { return $found.Directory.FullName }
             }
             throw "Application root could not be found. Markers: $($Markers -join ', ')"
+          }
+
+          function Invoke-ReleaseCleanup([string]$Root, [string]$ToolId) {
+            Write-Section ("RELEASE CLEANUP / GUIDE REMOVAL: " + $ToolId)
+
+            # Remove development-only folders and standalone guide/tour packages.
+            $removeDirNames = @(
+              'tests','test','test_data','docs','examples','example',
+              '__pycache__','.pytest_cache','.mypy_cache',
+              'common_guide','guide','guides','guided_tour','tour','tours'
+            )
+            Get-ChildItem -LiteralPath $Root -Recurse -Directory -Force -ErrorAction SilentlyContinue |
+              Where-Object { $removeDirNames -contains $_.Name.ToLowerInvariant() } |
+              Sort-Object { $_.FullName.Length } -Descending |
+              ForEach-Object {
+                Write-Host ("Removing release-excluded directory: " + $_.FullName)
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+              }
+
+            Get-ChildItem -LiteralPath $Root -Recurse -File -Force -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -match '(?i)^(guide_manager|tour_manager|startup_guide|guided_tour)\.py$' -or
+                $_.Name -match '(?i)(debug|test).*\.(bat|cmd)$'
+              } |
+              ForEach-Object {
+                Write-Host ("Removing release-excluded file: " + $_.FullName)
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+              }
+
+            function Update-TextFile([string]$Path, [scriptblock]$Transform) {
+              if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+              $before = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+              $after = & $Transform $before
+              if ($null -eq $after) { throw "Cleanup transform returned null for $Path" }
+              if ($after -ne $before) {
+                Set-Content -LiteralPath $Path -Value $after -Encoding UTF8
+                Write-Host ("Patched: " + $Path)
+              }
+            }
+
+            switch ($ToolId) {
+              'DOanalysis' {
+                $path = Join-Path $Root 'do_analysis_qt_app.py'
+                Update-TextFile $path {
+                  param($text)
+                  $text = [regex]::Replace($text, '(?m)^from common_guide import .*\r?\n', '')
+                  $text = [regex]::Replace($text, '(?m)^\s*self\._setup_guide_system\(\)\s*\r?\n', '')
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^    def _setup_guide_system\(self\).*?(?=^    def _cleanup_before_close)',
+                    ''
+                  )
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^    def closeEvent\(self, event\) -> None:\r?\n.*?(?=^    def select_files)',
+                    "    def closeEvent(self, event) -> None:`r`n        self._cleanup_before_close()`r`n        event.accept()`r`n`r`n"
+                  )
+                  return $text
+                }
+              }
+
+              'TrackerSNR' {
+                $path = Join-Path $Root 'TrackerSNR_CLEAN_EXE.py'
+                Update-TextFile $path {
+                  param($text)
+                  $text = [regex]::Replace($text, '(?m)^\s*self\.btn_help = QPushButton\(''Guide / Tour''\)\s*\r?\n', '')
+                  $text = $text.Replace(
+                    'for b in [self.btn_import_files, self.btn_import_folder, self.btn_reset_data, self.btn_save_excel, self.btn_save_project, self.btn_open_project, self.btn_help]:',
+                    'for b in [self.btn_import_files, self.btn_import_folder, self.btn_reset_data, self.btn_save_excel, self.btn_save_project, self.btn_open_project]:'
+                  )
+                  $text = [regex]::Replace($text, '(?m)^\s*self\.btn_help\.clicked\.connect\(self\.show_guide_and_tour\)\s*\r?\n', '')
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^    def show\(self\):\r?\n.*?(?=^    def handle_startup_guide)',
+                    "    def show(self):`r`n        self.window.show()`r`n`r`n"
+                  )
+                  $replacement = @'
+              def handle_close_event(self, event):
+                  if self._allow_close:
+                      event.accept()
+                      return
+                  result = self.QMessageBox.question(
+                      self.window,
+                      "Exit Tracker SNR Analyzer",
+                      "Exit Tracker SNR Analyzer?",
+                      self.QMessageBox.StandardButton.Yes | self.QMessageBox.StandardButton.No,
+                      self.QMessageBox.StandardButton.No,
+                  )
+                  if result == self.QMessageBox.StandardButton.Yes:
+                      self._allow_close = True
+                      for root in self.temp_roots:
+                          shutil.rmtree(root, ignore_errors=True)
+                      event.accept()
+                  else:
+                      event.ignore()
+          
+          '@
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^    def handle_startup_guide\(self\):.*?(?=^    def append_log)',
+                    $replacement
+                  )
+                  return $text
+                }
+                $version = Join-Path $Root 'version.json'
+                if (Test-Path -LiteralPath $version) {
+                  try {
+                    $json = Get-Content -LiteralPath $version -Raw | ConvertFrom-Json
+                    if ($json.PSObject.Properties.Name -contains 'changes') {
+                      $json.changes = @($json.changes | Where-Object { $_ -notmatch '(?i)guide|tour' })
+                    }
+                    $json | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $version -Encoding UTF8
+                  } catch { Write-Warning ("Could not normalize TrackerSNR version.json: " + $_.Exception.Message) }
+                }
+              }
+
+              'LogExplorer' {
+                $path = Join-Path $Root 'LogMergeTool_NoExcel_Main.py'
+                Update-TextFile $path {
+                  param($text)
+                  $replacement = @'
+          # ---------------------------------------------------------------------------
+          # Commit0068 release cleanup: guide/tour removed for Service Hub distribution
+          # ---------------------------------------------------------------------------
+          APP_VERSION = "2.0.0-rc1-commit0069"
+          
+          # ---------------------------------------------------------------------------
+          # Commit0069: current workflow guide and daily source/output reset
+          # ---------------------------------------------------------------------------
+          '@
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^# ---------------------------------------------------------------------------\r?\n# Commit0068:.*?^# ---------------------------------------------------------------------------\r?\n# Commit0069: current workflow guide and daily source/output reset\r?\n# ---------------------------------------------------------------------------',
+                    $replacement
+                  )
+                  return $text
+                }
+              }
+
+              'FUSImageExplore' {
+                $path = Join-Path $Root 'app.py'
+                Update-TextFile $path {
+                  param($text)
+                  $text = [regex]::Replace($text, '(?m)^\s*QTimer\.singleShot\(650, self\._handle_startup_guide_flow\)\s*\r?\n', '')
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^\s*self\.comp_guide_button = QPushButton\("\? Guide Library"\).*?^\s*guide_row\.addWidget\(self\.comp_guide_button\)\s*\r?\n',
+                    ''
+                  )
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^\s*normal_guide_action = QAction\("Normal Usage Guide", self\).*?^\s*help_menu\.addAction\(library_action\)\s*\r?\n',
+                    ''
+                  )
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^    def _guide_pages\(self\):.*?(?=^    def closeEvent\(self, event\):)',
+                    ''
+                  )
+                  $text = [regex]::Replace(
+                    $text,
+                    '(?ms)^    def closeEvent\(self, event\):\r?\n.*?(?=^    def resizeEvent)',
+                    @'
+          def closeEvent(self, event):
+          reply = QMessageBox.question(
+            self,
+            "Close MR Image Explorer",
+            "Close MR Image Explorer? Unsaved work may be lost.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+          )
+          if reply != QMessageBox.Yes:
+            event.ignore()
+            return
+          self._save_viewer_layout()
+          self.import_cancel_event.set()
+          if self.import_worker is not None:
+            try:
+                self.import_worker.cancel()
+            except Exception:
+                pass
+          for directory in self.temp_dirs:
+            try:
+                shutil.rmtree(directory, ignore_errors=True)
+            except Exception:
+                pass
+          event.accept()
+          
+          '@
+                  )
+                  return $text
+                }
+              }
+            }
+
+            # Compile every remaining Python source before building.
+            $pythonFiles = @(Get-ChildItem -LiteralPath $Root -Recurse -File -Filter '*.py' -ErrorAction SilentlyContinue)
+            foreach ($py in $pythonFiles) {
+              python -m py_compile $py.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Python syntax check failed after cleanup: $($py.FullName)" }
+            }
+
+            # Fail if active source still contains known startup-guide UI markers.
+            $remaining = @(
+              Get-ChildItem -LiteralPath $Root -Recurse -File -Include '*.py','*.json' -ErrorAction SilentlyContinue |
+                Select-String -Pattern 'Yes — Show Guide|No — Do Not Ask Again|Show the guide and guided tour at the next startup|Would you like to view the Quick Guide and Guided Tour|Guide / Tour' -SimpleMatch:$false
+            )
+            if ($remaining.Count -gt 0) {
+              $remaining | Select-Object -First 30 | ForEach-Object { Write-Host $_.ToString() }
+              throw "Guide/tour runtime markers remain after release cleanup for $ToolId"
+            }
+
+            Write-Host ("[PASS] Guide/tour removed and release cleanup completed: " + $ToolId)
           }
 
           function Install-Requirements([string]$Root) {
@@ -309,6 +522,7 @@ jobs:
 
           if ($selectedModule -ine 'InSightec_Service_hub') {
             $root = Find-Root $selectedExtract @('01_BUILD_EXE.bat','main.py','launcher.py','VIMeasureAnalyzer.py')
+            Invoke-ReleaseCleanup $root $selectedModule
             Install-Requirements $root
             $plan = Select-BuildFile $root @('01_BUILD_EXE.bat','01_BUILD_EXE_NUITKA.bat','02_BUILD_EXE_NUITKA.bat','build_exe.bat') @('main.py','launcher.py','VIMeasureAnalyzer.py')
             Invoke-Build $root $plan
@@ -317,6 +531,7 @@ jobs:
             $startupExe = $package.Exe.FullName
           } else {
             $hubRoot = Find-Root $selectedExtract @('InSightecServiceHub.py','01_BUILD_EXE.bat')
+            Invoke-ReleaseCleanup $hubRoot 'Hub'
             Install-Requirements $hubRoot
             $hubPlan = Select-BuildFile $hubRoot @('01_BUILD_EXE.bat') @('InSightecServiceHub.py')
             Invoke-Build $hubRoot $hubPlan
@@ -342,6 +557,7 @@ jobs:
               $zip = Resolve-SourceZip $moduleDir '' $tool.Id
               $extract = Expand-Source $zip $tool.Id
               $root = Find-Root $extract $tool.Markers
+              Invoke-ReleaseCleanup $root $tool.Id
               Install-Requirements $root
               $plan = Select-BuildFile $root $tool.Bats $tool.Entries
               Invoke-Build $root $plan
@@ -411,10 +627,10 @@ jobs:
           if (-not (Test-Path -LiteralPath $startupExe -PathType Leaf)) { throw "Startup EXE missing: $startupExe" }
 
           $safe = "${{ inputs.module_name }}" -replace '[^A-Za-z0-9._-]','_'
-          $outDir = Join-Path $env:RUNNER_TEMP 'rc4_1_artifact'
+          $outDir = Join-Path $env:RUNNER_TEMP 'rc5_artifact'
           Remove-Item -LiteralPath $outDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-          $zip = Join-Path $outDir ($safe + '_RC4_3_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
+          $zip = Join-Path $outDir ($safe + '_RC5_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           [IO.Compression.ZipFile]::CreateFromDirectory($packageDir,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
@@ -429,7 +645,7 @@ jobs:
           } finally { $archive.Dispose() }
 
           "zip_path=$zip" >> $env:GITHUB_OUTPUT
-          "artifact_name=$($safe)_RC4_3_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
+          "artifact_name=$($safe)_RC5_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
 
       - name: Upload versioned artifact
         uses: actions/upload-artifact@v4
