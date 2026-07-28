@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 R11 - Split SOURCE ZIP + setup-python Cache Fix
+name: Build Selected Module RC1 R13 - Hub Root Selection and Child Source Exclusion Fix
 
 on:
   workflow_dispatch:
@@ -265,13 +265,33 @@ jobs:
           # from being resolved against the wrong directory.
           $candidateDirs = @($extractDir)
           $candidateDirs += Get-ChildItem -Path $extractDir -Recurse -Directory |
-            Where-Object { $_.FullName -notmatch "\\(build|dist|dist_nuitka|venv|\.venv|site-packages|__pycache__)\\" } |
+            Where-Object {
+              $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|dist_nuitka|venv|\.venv|site-packages|__pycache__)(\\|$)"
+            } |
             ForEach-Object { $_.FullName }
 
-          $bestRoot = $extractDir
-          $bestScore = -1
+          # Hub packages contain complete child-tool sources. Prefer the archive
+          # root (or its single wrapper folder) when Hub-specific markers exist.
+          $preferredRoots = @($extractDir)
+          $topLevelDirs = @(Get-ChildItem -Path $extractDir -Directory)
+          $topLevelFiles = @(Get-ChildItem -Path $extractDir -File)
+          if ($topLevelDirs.Count -eq 1 -and $topLevelFiles.Count -eq 0) {
+            $preferredRoots += $topLevelDirs[0].FullName
+          }
+
+          $forcedHubRoot = $preferredRoots | Where-Object {
+            (Test-Path (Join-Path $_ "InSightecServiceHub.py") -PathType Leaf) -or
+            (Test-Path (Join-Path $_ "Build_Hub_EXE.py") -PathType Leaf)
+          } | Select-Object -First 1
+
+          $bestRoot = if ($forcedHubRoot) { $forcedHubRoot } else { $extractDir }
+          $bestScore = if ($forcedHubRoot) { 100000 } else { -1 }
           foreach ($candidateDir in ($candidateDirs | Select-Object -Unique)) {
+            if ($forcedHubRoot) { break }
             $score = 0
+            if (Test-Path (Join-Path $candidateDir "InSightecServiceHub.py") -PathType Leaf) { $score += 5000 }
+            if (Test-Path (Join-Path $candidateDir "Build_Hub_EXE.py") -PathType Leaf) { $score += 3000 }
+            if (Test-Path (Join-Path $candidateDir "01_BUILD_EXE.bat") -PathType Leaf) { $score += 1500 }
             if (Test-Path (Join-Path $candidateDir "build_config.json") -PathType Leaf) { $score += 1000 }
             if (Test-Path (Join-Path $candidateDir "version.json") -PathType Leaf) { $score += 200 }
             if (Test-Path (Join-Path $candidateDir "BUILD_EXE.bat") -PathType Leaf) { $score += 180 }
@@ -304,7 +324,7 @@ jobs:
           Write-Host "Detected root   : $sourceDir"
           Write-Host "Root score      : $bestScore"
           Write-Host "Root markers:"
-          foreach ($marker in @("build_config.json", "version.json", "BUILD_EXE.bat", "build.bat", "main.py", "hub_app.py")) {
+          foreach ($marker in @("build_config.json", "version.json", "01_BUILD_EXE.bat", "BUILD_EXE.bat", "InSightecServiceHub.py", "Build_Hub_EXE.py", "main.py", "hub_app.py")) {
             $markerPath = Join-Path $sourceDir $marker
             Write-Host " - $marker = $(Test-Path $markerPath -PathType Leaf)"
           }
@@ -334,8 +354,20 @@ jobs:
 
           $meta = $null
           $buildConfig = $null
-          $buildConfigFile = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "build_config.json" |
-            Select-Object -First 1
+          # The selected module may contain complete sources of child tools.
+          # Always prefer metadata placed at the extracted module root. Child-tool
+          # metadata under integrated_sources/tools/plugins must never redefine
+          # which application this workflow builds.
+          $buildConfigFile = $null
+          $rootBuildConfig = Join-Path $sourceDir "build_config.json"
+          if (Test-Path $rootBuildConfig -PathType Leaf) {
+            $buildConfigFile = Get-Item $rootBuildConfig
+          } else {
+            $buildConfigFile = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "build_config.json" |
+              Where-Object { $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|venv|\.venv|site-packages)(\\|$)" } |
+              Sort-Object { $_.FullName.Split([IO.Path]::DirectorySeparatorChar).Count }, FullName |
+              Select-Object -First 1
+          }
           if ($buildConfigFile) {
             try {
               $buildConfig = Get-Content $buildConfigFile.FullName -Raw | ConvertFrom-Json
@@ -345,8 +377,16 @@ jobs:
             }
           }
 
-          $versionFile = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "version.json" |
-            Select-Object -First 1
+          $versionFile = $null
+          $rootVersion = Join-Path $sourceDir "version.json"
+          if (Test-Path $rootVersion -PathType Leaf) {
+            $versionFile = Get-Item $rootVersion
+          } else {
+            $versionFile = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "version.json" |
+              Where-Object { $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|venv|\.venv|site-packages)(\\|$)" } |
+              Sort-Object { $_.FullName.Split([IO.Path]::DirectorySeparatorChar).Count }, FullName |
+              Select-Object -First 1
+          }
           if ($versionFile) {
             try {
               $meta = Get-Content $versionFile.FullName -Raw | ConvertFrom-Json
@@ -355,6 +395,10 @@ jobs:
               Write-Warning "version.json parse failed. Falling back to ZIP filename."
             }
           }
+
+          Write-Host "Resolved module metadata files:"
+          Write-Host " - build_config: $(if ($buildConfigFile) { $buildConfigFile.FullName } else { '<none>' })"
+          Write-Host " - version:      $(if ($versionFile) { $versionFile.FullName } else { '<none>' })"
 
           $fallbackApp = "${{ steps.source.outputs.module_name }}"
           $fallbackVersion = "Unknown"
@@ -378,9 +422,9 @@ jobs:
             $configuredExeCandidates = @($buildConfig.executable_candidates | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
           }
           $metadataExeName = Value-Or $meta.exe_name ""
+          $entryPoint = Value-Or $meta.entry_point ""
           $entryStem = if (-not [string]::IsNullOrWhiteSpace($entryPoint)) { [IO.Path]::GetFileNameWithoutExtension($entryPoint) } else { "application" }
           $exeName = if (-not [string]::IsNullOrWhiteSpace($metadataExeName)) { $metadataExeName } elseif ($configuredExeCandidates.Count -gt 0) { $configuredExeCandidates[0] } else { "$entryStem.exe" }
-          $entryPoint = Value-Or $meta.entry_point ""
 
           $configuredScript = Value-Or $buildConfig.build_script ""
           $configuredArtifactPath = Value-Or $buildConfig.artifact_path ""
@@ -423,7 +467,7 @@ jobs:
             if (-not (Test-Path $scriptCandidate -PathType Leaf)) {
               $scriptLeaf = Split-Path $configuredScript -Leaf
               $recursiveMatches = @(Get-ChildItem -Path $sourceDir -Recurse -File -Filter $scriptLeaf |
-                Where-Object { $_.FullName -notmatch "\\(build|dist|dist_nuitka|venv|\.venv|site-packages)\\" })
+                Where-Object { $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|dist_nuitka|venv|\.venv|site-packages)(\\|$)" })
               if ($recursiveMatches.Count -eq 1) {
                 $scriptCandidate = $recursiveMatches[0].FullName
                 Write-Warning "Configured build script was found recursively: $scriptCandidate"
@@ -444,7 +488,7 @@ jobs:
             $null
           } else {
             Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.spec" |
-              Where-Object { $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages)\\" } |
+              Where-Object { $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|venv|\.venv|site-packages)(\\|$)" } |
               Sort-Object Name -Descending |
               Select-Object -First 1
           }
@@ -460,9 +504,10 @@ jobs:
           }
 
           if ([string]::IsNullOrWhiteSpace($entryOverride) -and [string]::IsNullOrWhiteSpace($entryPoint)) {
-            foreach ($name in @("app.py", "main.py", "run.py", "start.py", "launcher.py", "__main__.py")) {
+            foreach ($name in @("InSightecServiceHub.py", "hub_app.py", "app.py", "main.py", "run.py", "start.py", "launcher.py", "__main__.py")) {
               $candidate = Get-ChildItem -Path $sourceDir -Recurse -File -Filter $name |
-                Where-Object { $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages|tests?|examples?)\\" } |
+                Where-Object { $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|venv|\.venv|site-packages|tests?|examples?)(\\|$)" } |
+                Sort-Object { $_.FullName.Split([IO.Path]::DirectorySeparatorChar).Count }, FullName |
                 Select-Object -First 1
               if ($candidate) {
                 $entryPoint = $candidate.FullName.Substring($sourceDir.Length).TrimStart('\')
@@ -477,7 +522,7 @@ jobs:
 
             $pythonFiles = Get-ChildItem -Path $sourceDir -Recurse -File -Filter "*.py" |
               Where-Object {
-                $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages|tests?|examples?|__pycache__)\\" -and
+                $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|venv|\.venv|site-packages|tests?|examples?|__pycache__)(\\|$)" -and
                 $_.Name -notmatch "^(setup|version|vendor_)"
               }
 
@@ -493,7 +538,8 @@ jobs:
               if ($content -match '\bwx\.App\s*\(') { $score += 50 }
               if ($content -match '\bdef\s+main\s*\(') { $score += 40 }
               if ($content -match '\.show\s*\(') { $score += 20 }
-              if ($file.Name -match '(app|main|run|start|launcher|analyzer)') { $score += 20 }
+              if ($file.Name -ieq 'InSightecServiceHub.py') { $score += 1000 }
+              if ($file.Name -match '(app|main|run|start|launcher|analyzer|hub)') { $score += 20 }
 
               if ($score -gt $bestScore) {
                 $bestScore = $score
@@ -511,16 +557,25 @@ jobs:
             throw "No valid build script, Python entry point, or PyInstaller SPEC was found."
           }
 
-          $requirements = Get-ChildItem -Path $sourceDir -Recurse -File |
-            Where-Object { $_.Name -match "^requirements.*\.txt$" } |
-            Sort-Object @{
-              Expression = {
-                if ($_.Name -eq "requirements.txt") { 0 }
-                elseif ($_.Name -match "build") { 2 }
-                else { 1 }
-              }
-            }, FullName |
-            Select-Object -First 1
+          $requirements = $null
+          $rootRequirements = Join-Path $sourceDir "requirements.txt"
+          if (Test-Path $rootRequirements -PathType Leaf) {
+            $requirements = Get-Item $rootRequirements
+          } else {
+            $requirements = Get-ChildItem -Path $sourceDir -Recurse -File |
+              Where-Object {
+                $_.Name -match "^requirements.*\.txt$" -and
+                $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|venv|\.venv|site-packages)(\\|$)"
+              } |
+              Sort-Object @{
+                Expression = {
+                  if ($_.Name -eq "requirements.txt") { 0 }
+                  elseif ($_.Name -match "build") { 2 }
+                  else { 1 }
+                }
+              }, FullName |
+              Select-Object -First 1
+          }
 
           if ([string]::IsNullOrWhiteSpace($metadataExeName)) {
             if ($configuredExeCandidates.Count -gt 0) {
@@ -638,7 +693,7 @@ jobs:
 
           foreach ($pattern in @("*.json", "*.ui", "*.ico", "*.png", "*.jpg", "*.jpeg")) {
             Get-ChildItem -Path $sourceDir -Recurse -File -Filter $pattern |
-              Where-Object { $_.FullName -notmatch "\\(build|dist|venv|\.venv|site-packages)\\" } |
+              Where-Object { $_.FullName -notmatch "\\(integrated_sources|tools|plugins|vendor|third_party|build|dist|venv|\.venv|site-packages)(\\|$)" } |
               ForEach-Object {
                 $relativeParent = $_.Directory.FullName.Substring($sourceDir.Length).TrimStart('\')
                 $destination = if ([string]::IsNullOrWhiteSpace($relativeParent)) { "." } else { $relativeParent }
