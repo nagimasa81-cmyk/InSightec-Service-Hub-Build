@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 R10 - Split SOURCE ZIP Auto Reassembly
+name: Build Selected Module RC1 R11 - Split SOURCE ZIP + setup-python Cache Fix
 
 on:
   workflow_dispatch:
@@ -561,10 +561,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: "pip"
-          cache-dependency-path: |
-            Module/${{ inputs.module_name }}/**/*_SOURCE.zip
-            Module/${{ inputs.module_name }}/**/*_SOURCE.zip.part*
+          # Do not enable setup-python's pip cache here.
+          # Split SOURCE files are build inputs, not dependency manifests, and
+          # setup-python fails when its cache dependency glob finds no match.
 
       - name: Install dependencies
         shell: pwsh
