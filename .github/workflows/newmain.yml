@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 R13 - Hub Root Selection and Child Source Exclusion Fix
+name: Build Selected Module RC1 R14 - Hub Dedicated Build Triple Check Fix
 
 on:
   workflow_dispatch:
@@ -430,6 +430,26 @@ jobs:
           $configuredArtifactPath = Value-Or $buildConfig.artifact_path ""
           $configuredEntrypoint = Value-Or $buildConfig.entrypoint ""
           $configuredEngine = Value-Or $buildConfig.build_engine ""
+
+          # Hub packages require their dedicated build launcher because it
+          # installs Hub-specific dependencies and copies runtime folders
+          # (tools, plugins, language, help, updates, resources) into the
+          # standalone distribution. Never route the Hub through a generic
+          # child-tool SPEC or plain PyInstaller auto-build.
+          $isHubRoot = (Test-Path (Join-Path $sourceDir "InSightecServiceHub.py") -PathType Leaf)
+          if ($isHubRoot) {
+            $hubBuildScript = Join-Path $sourceDir "01_BUILD_EXE.bat"
+            if (-not (Test-Path $hubBuildScript -PathType Leaf)) {
+              throw "Hub source was detected but 01_BUILD_EXE.bat is missing: $hubBuildScript"
+            }
+            $configuredScript = "01_BUILD_EXE.bat"
+            $configuredArtifactPath = "dist\InSightecServiceHub"
+            $configuredEntrypoint = "InSightecServiceHub.exe"
+            $configuredEngine = "fast_pyinstaller"
+            $configuredExeCandidates = @("InSightecServiceHub.exe", "InSightec_APAC_Service_Hub.exe")
+            $exeName = "InSightecServiceHub.exe"
+            Write-Host "Hub dedicated build path enabled."
+          }
           $preferredEngine = Value-Or $meta.build_engine $configuredEngine
           if ($preferredEngine -in @("Nuitka", "nuitka")) { $preferredEngine = "nuitka_standalone" }
           if ($preferredEngine -in @("PyInstaller", "pyinstaller")) { $preferredEngine = "fast_pyinstaller" }
