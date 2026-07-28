@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 R8 - VIMeasure Native Handoff Triple Check
+name: Build Selected Module RC1 R10 - Split SOURCE ZIP Auto Reassembly
 
 on:
   workflow_dispatch:
@@ -102,45 +102,88 @@ jobs:
           $requestedZip = "${{ inputs.source_zip }}".Trim()
           $allFiles = @(Get-ChildItem -Path $moduleDir -Recurse -File)
 
-          # A source may be stored as one normal ZIP or as GitHub-upload-friendly
-          # binary parts: <name>_SOURCE.zip.part001, .part002, ...
-          $normalZips = @($allFiles | Where-Object { $_.Name -like "*_SOURCE.zip" })
-          $splitParts = @($allFiles | Where-Object { $_.Name -match '^(?<base>.+_SOURCE\.zip)\.part(?<number>\d{3,})$' })
+          # ------------------------------------------------------------
+          # SOURCE selection priority
+          #   1. Split SOURCE set: *.zip.part001 + contiguous following parts
+          #   2. Normal SOURCE ZIP: *_SOURCE.zip
+          # The split set is assembled before any normal ZIP requirement check.
+          # ------------------------------------------------------------
+          $normalZips = @(
+            $allFiles |
+              Where-Object { $_.Name -match '(?i)_SOURCE\.zip$' } |
+              Sort-Object LastWriteTimeUtc -Descending
+          )
+
+          $splitParts = @(
+            $allFiles |
+              Where-Object { $_.Name -match '(?i)\.zip\.part\d{3,}$' }
+          )
+
           $splitGroups = @{}
           foreach ($part in $splitParts) {
-            if ($part.Name -notmatch '^(?<base>.+_SOURCE\.zip)\.part(?<number>\d{3,})$') { continue }
+            if ($part.Name -notmatch '^(?<base>.+\.zip)\.part(?<number>\d{3,})$') { continue }
             $baseName = $Matches.base
-            if (-not $splitGroups.ContainsKey($baseName)) { $splitGroups[$baseName] = @() }
-            $splitGroups[$baseName] += $part
+            if (-not $splitGroups.ContainsKey($baseName)) {
+              $splitGroups[$baseName] = [System.Collections.Generic.List[object]]::new()
+            }
+            $splitGroups[$baseName].Add($part)
+          }
+
+          function Normalize-RequestedBase([string]$name) {
+            if ([string]::IsNullOrWhiteSpace($name)) { return "" }
+            $n = [System.IO.Path]::GetFileName($name.Trim())
+            $n = $n -replace '(?i)\.part\d{3,}$', ''
+            if ($n -notmatch '(?i)\.zip$') { $n = "$n.zip" }
+            return $n
           }
 
           $selectedBaseName = $null
           $zip = $null
           $parts = @()
+          $requestedBase = Normalize-RequestedBase $requestedZip
 
-          if (-not [string]::IsNullOrWhiteSpace($requestedZip)) {
-            $requestedBase = $requestedZip -replace '\.part\d{3,}$', ''
-            $zip = $normalZips | Where-Object { $_.Name -eq $requestedBase } | Select-Object -First 1
-            if (-not $zip -and $splitGroups.ContainsKey($requestedBase)) {
-              $selectedBaseName = $requestedBase
-              $parts = @($splitGroups[$requestedBase] | Sort-Object Name)
+          if (-not [string]::IsNullOrWhiteSpace($requestedBase)) {
+            # Explicit selection: split set first, then normal ZIP.
+            $splitKey = @($splitGroups.Keys | Where-Object { $_ -ieq $requestedBase } | Select-Object -First 1)
+            if ($splitKey.Count -gt 0) {
+              $selectedBaseName = $splitKey[0]
+              $parts = @($splitGroups[$selectedBaseName] | Sort-Object Name)
+            } else {
+              $zip = $normalZips | Where-Object { $_.Name -ieq $requestedBase } | Select-Object -First 1
             }
+
             if (-not $zip -and $parts.Count -eq 0) {
-              throw "Requested SOURCE ZIP or split SOURCE parts were not found: $requestedZip"
+              Write-Host "Files found under module folder:"
+              $allFiles | ForEach-Object { Write-Host " - $($_.FullName)" }
+              throw "Requested SOURCE ZIP or split set was not found: $requestedZip"
             }
           } else {
-            $candidateNames = @($normalZips | ForEach-Object { $_.Name }) + @($splitGroups.Keys)
-            $selectedBaseName = $candidateNames | Sort-Object -Descending | Select-Object -First 1
-            if ($selectedBaseName) {
-              $zip = $normalZips | Where-Object { $_.Name -eq $selectedBaseName } | Select-Object -First 1
-              if (-not $zip -and $splitGroups.ContainsKey($selectedBaseName)) {
-                $parts = @($splitGroups[$selectedBaseName] | Sort-Object Name)
+            # Automatic selection: newest split set is preferred over normal ZIP.
+            $splitCandidates = foreach ($baseName in $splitGroups.Keys) {
+              $group = @($splitGroups[$baseName])
+              [pscustomobject]@{
+                BaseName = $baseName
+                Parts = $group
+                Latest = ($group | Measure-Object LastWriteTimeUtc -Maximum).Maximum
               }
+            }
+
+            $selectedSplit = $splitCandidates |
+              Sort-Object Latest -Descending |
+              Select-Object -First 1
+
+            if ($selectedSplit) {
+              $selectedBaseName = $selectedSplit.BaseName
+              $parts = @($selectedSplit.Parts | Sort-Object Name)
+            } else {
+              $zip = $normalZips | Select-Object -First 1
             }
           }
 
           if (-not $zip -and $parts.Count -eq 0) {
-            throw "No *_SOURCE.zip or *_SOURCE.zip.partNNN files were found under: $moduleDir"
+            Write-Host "Module directory listing:"
+            $allFiles | ForEach-Object { Write-Host " - $($_.FullName)" }
+            throw "No normal *_SOURCE.zip or split *.zip.part001 set was found under: $moduleDir"
           }
 
           $assembledDir = Join-Path $env:RUNNER_TEMP "assembled_source"
@@ -148,33 +191,58 @@ jobs:
           New-Item -ItemType Directory -Force -Path $assembledDir | Out-Null
 
           if ($parts.Count -gt 0) {
-            # Verify numbering is continuous before joining.
+            Write-Host "Split SOURCE set selected: $selectedBaseName"
+
+            # Validate that numbering starts at 001 and is continuous.
             $expected = 1
             foreach ($part in $parts) {
               if ($part.Name -notmatch '\.part(?<number>\d{3,})$') {
                 throw "Invalid split part name: $($part.Name)"
               }
+
               $actual = [int]$Matches.number
               if ($actual -ne $expected) {
-                throw "Missing or out-of-order split part. Expected part$('{0:D3}' -f $expected), found $($part.Name)"
+                $expectedName = "part{0:D3}" -f $expected
+                throw "Split SOURCE is incomplete. Expected $expectedName but found $($part.Name)"
               }
+
               if ($part.Length -ge 25MB) {
-                throw "Split part is not below 25 MB: $($part.Name) ($($part.Length) bytes)"
+                throw "Split part must be smaller than 25 MB: $($part.Name) ($($part.Length) bytes)"
+              }
+              if ($part.Length -le 0) {
+                throw "Split part is empty: $($part.Name)"
               }
               $expected++
             }
 
             $assembledZip = Join-Path $assembledDir $selectedBaseName
-            $output = [System.IO.File]::Open($assembledZip, [System.IO.FileMode]::Create)
+            $output = [System.IO.File]::Open(
+              $assembledZip,
+              [System.IO.FileMode]::Create,
+              [System.IO.FileAccess]::Write,
+              [System.IO.FileShare]::None
+            )
             try {
               foreach ($part in $parts) {
-                Write-Host "Joining: $($part.Name) ($($part.Length) bytes)"
+                Write-Host "Joining $($part.Name) - $($part.Length) bytes"
                 $input = [System.IO.File]::OpenRead($part.FullName)
-                try { $input.CopyTo($output) } finally { $input.Dispose() }
+                try {
+                  $input.CopyTo($output)
+                } finally {
+                  $input.Dispose()
+                }
               }
-            } finally { $output.Dispose() }
+            } finally {
+              $output.Dispose()
+            }
+
             $zip = Get-Item $assembledZip
-            Write-Host "Reassembled ZIP: $($zip.FullName)"
+            Write-Host "Reassembled SOURCE ZIP: $($zip.FullName)"
+            Write-Host "Reassembled size      : $($zip.Length) bytes"
+            Write-Host "Reassembled SHA-256   : $((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash)"
+          } else {
+            Write-Host "Normal SOURCE ZIP selected: $($zip.FullName)"
+            Write-Host "SOURCE ZIP SHA-256      : $((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash)"
           }
 
           # Validate the resulting ZIP before extraction.
