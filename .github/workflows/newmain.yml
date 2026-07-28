@@ -129,7 +129,7 @@ jobs:
             }
 
             if (-not $selectedNormal -and $selectedParts.Count -eq 0) {
-              Write-Host "Files under $ModuleDir:"
+              Write-Host ("Files under {0}:" -f $ModuleDir)
               $files | ForEach-Object { Write-Host (" - " + $_.FullName) }
               throw "No SOURCE ZIP was found in $ModuleDir"
             }
@@ -414,7 +414,7 @@ jobs:
           $outDir = Join-Path $env:RUNNER_TEMP 'rc4_1_artifact'
           Remove-Item -LiteralPath $outDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-          $zip = Join-Path $outDir ($safe + '_RC4_1_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
+          $zip = Join-Path $outDir ($safe + '_RC4_3_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           [IO.Compression.ZipFile]::CreateFromDirectory($packageDir,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
@@ -429,7 +429,7 @@ jobs:
           } finally { $archive.Dispose() }
 
           "zip_path=$zip" >> $env:GITHUB_OUTPUT
-          "artifact_name=$($safe)_RC4_1_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
+          "artifact_name=$($safe)_RC4_3_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
 
       - name: Upload versioned artifact
         uses: actions/upload-artifact@v4
