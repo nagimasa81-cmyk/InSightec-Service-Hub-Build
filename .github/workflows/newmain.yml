@@ -1,4 +1,4 @@
-name: Build Selected Module RC3 - Complete Hub with Integrated Tools - Clean Source Build
+name: Build InSightec APAC Service Hub RC4.2 - Exact Repository Module Mapping
 
 on:
   workflow_dispatch:
@@ -8,28 +8,16 @@ on:
         required: true
         type: choice
         options:
+          - InSightec_Service_hub
           - Soni
           - VIMeasure
-          - ExAna
           - FFT
           - trackerSNR
-          - Water_system_analyzer
-          - WS_Investigation
+          - DO_Analysis
           - Log_explorer
           - Complaint_service_hub
-          - InSightec_Service_hub
-          - HUB
-          - DO Analysis
-          - FileTypeBuilder
-          - FUSSIM
-          - SPC
       source_zip:
-        description: Optional SOURCE ZIP filename. Normal .zip and split .zip.part001 sets are supported.
-        required: false
-        default: ""
-        type: string
-      entry_point_override:
-        description: Optional Python entry point relative to the extracted source root.
+        description: Optional SOURCE ZIP filename for the selected module
         required: false
         default: ""
         type: string
@@ -38,13 +26,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc2-build-${{ inputs.module_name }}-${{ github.ref }}
+  group: rc4-2-${{ inputs.module_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       PYTHONUTF8: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -53,515 +41,395 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve and reassemble SOURCE ZIP
-        id: source
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $moduleName = "${{ inputs.module_name }}".Trim()
-          if ([string]::IsNullOrWhiteSpace($moduleName)) {
-            throw "module_name is required."
-          }
-
-          $moduleDir = Join-Path $env:GITHUB_WORKSPACE ("Module\" + $moduleName)
-          if (-not (Test-Path -LiteralPath $moduleDir -PathType Container)) {
-            Write-Host "Available module folders:"
-            Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE "Module") -Directory -ErrorAction SilentlyContinue |
-              ForEach-Object { Write-Host (" - " + $_.Name) }
-            throw "Module folder was not found: $moduleDir"
-          }
-
-          $requested = "${{ inputs.source_zip }}".Trim()
-          if ($requested) {
-            $requested = [System.IO.Path]::GetFileName($requested)
-            $requested = $requested -replace '(?i)\.part\d+$', ''
-            if ($requested -notmatch '(?i)\.zip$') {
-              $requested += ".zip"
-            }
-          }
-
-          $files = @(Get-ChildItem -LiteralPath $moduleDir -Recurse -File)
-          $normalZips = @(
-            $files |
-              Where-Object { $_.Name -match '(?i)_SOURCE\.zip$' } |
-              Sort-Object LastWriteTimeUtc -Descending
-          )
-
-          $partFiles = @(
-            $files |
-              Where-Object { $_.Name -match '(?i)\.zip\.part\d{3,}$' }
-          )
-
-          $groups = @{}
-          foreach ($part in $partFiles) {
-            if ($part.Name -match '^(?<base>.+\.zip)\.part(?<number>\d{3,})$') {
-              $base = $Matches.base
-              if (-not $groups.ContainsKey($base)) {
-                $groups[$base] = [System.Collections.Generic.List[object]]::new()
-              }
-              $groups[$base].Add($part)
-            }
-          }
-
-          $selectedNormal = $null
-          $selectedBase = $null
-          $selectedParts = @()
-
-          if ($requested) {
-            $matchingBase = @($groups.Keys | Where-Object { $_ -ieq $requested } | Select-Object -First 1)
-            if ($matchingBase.Count -gt 0) {
-              $selectedBase = [string]$matchingBase[0]
-              $selectedParts = @($groups[$selectedBase])
-            } else {
-              $selectedNormal = $normalZips | Where-Object { $_.Name -ieq $requested } | Select-Object -First 1
-            }
-          } else {
-            $splitSets = @(
-              foreach ($base in $groups.Keys) {
-                $setParts = @($groups[$base])
-                [pscustomobject]@{
-                  Base = [string]$base
-                  Parts = $setParts
-                  Latest = ($setParts | Measure-Object LastWriteTimeUtc -Maximum).Maximum
-                }
-              }
-            )
-
-            $newestSplit = $splitSets | Sort-Object Latest -Descending | Select-Object -First 1
-            $newestNormal = $normalZips | Select-Object -First 1
-
-            if ($newestSplit -and (-not $newestNormal -or $newestSplit.Latest -ge $newestNormal.LastWriteTimeUtc)) {
-              $selectedBase = $newestSplit.Base
-              $selectedParts = @($newestSplit.Parts)
-            } else {
-              $selectedNormal = $newestNormal
-            }
-          }
-
-          if (-not $selectedNormal -and $selectedParts.Count -eq 0) {
-            Write-Host "Files under selected module:"
-            $files | ForEach-Object { Write-Host (" - " + $_.FullName) }
-            throw "No *_SOURCE.zip or *.zip.part001 SOURCE set was found under: $moduleDir"
-          }
-
-          $workDir = Join-Path $env:RUNNER_TEMP "rc2_source"
-          Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $workDir -Force | Out-Null
-
-          if ($selectedParts.Count -gt 0) {
-            $selectedParts = @(
-              $selectedParts |
-                Sort-Object { [int]([regex]::Match($_.Name, '\.part(\d+)$').Groups[1].Value) }
-            )
-
-            $expected = 1
-            foreach ($part in $selectedParts) {
-              $match = [regex]::Match($part.Name, '\.part(\d+)$')
-              if (-not $match.Success) {
-                throw "Invalid split part name: $($part.Name)"
-              }
-              $number = [int]$match.Groups[1].Value
-              if ($number -ne $expected) {
-                throw ("Split SOURCE is incomplete. Expected part{0:D3}, found {1}" -f $expected, $part.Name)
-              }
-              if ($part.Length -le 0) {
-                throw "Split part is empty: $($part.Name)"
-              }
-              if ($part.Length -ge 25MB) {
-                throw "Split part must be smaller than 25 MB: $($part.Name)"
-              }
-              $expected++
-            }
-
-            $sourceZip = Join-Path $workDir $selectedBase
-            $outputStream = [System.IO.File]::Open($sourceZip, [System.IO.FileMode]::Create)
-            try {
-              foreach ($part in $selectedParts) {
-                Write-Host ("Appending " + $part.Name)
-                $inputStream = [System.IO.File]::OpenRead($part.FullName)
-                try {
-                  $inputStream.CopyTo($outputStream)
-                } finally {
-                  $inputStream.Dispose()
-                }
-              }
-            } finally {
-              $outputStream.Dispose()
-            }
-          } else {
-            $sourceZip = Join-Path $workDir $selectedNormal.Name
-            Copy-Item -LiteralPath $selectedNormal.FullName -Destination $sourceZip -Force
-          }
-
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $archive = [System.IO.Compression.ZipFile]::OpenRead($sourceZip)
-          try {
-            if ($archive.Entries.Count -eq 0) {
-              throw "SOURCE ZIP is empty."
-            }
-            Write-Host ("SOURCE ZIP entries: " + $archive.Entries.Count)
-          } finally {
-            $archive.Dispose()
-          }
-
-          $hash = (Get-FileHash -LiteralPath $sourceZip -Algorithm SHA256).Hash
-          Write-Host ("SOURCE ZIP : " + $sourceZip)
-          Write-Host ("SHA-256   : " + $hash)
-
-          "source_zip=$sourceZip" >> $env:GITHUB_OUTPUT
-          "module_dir=$moduleDir" >> $env:GITHUB_OUTPUT
-
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: Extract SOURCE and locate application root
-        id: locate
+      - name: Install common build dependencies
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $extractDir = Join-Path $env:RUNNER_TEMP "rc2_extracted"
-          Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
-          Expand-Archive -LiteralPath "${{ steps.source.outputs.source_zip }}" -DestinationPath $extractDir -Force
-
-          $root = $extractDir
-          $topDirectories = @(Get-ChildItem -LiteralPath $extractDir -Directory)
-          $topFiles = @(Get-ChildItem -LiteralPath $extractDir -File)
-          if ($topDirectories.Count -eq 1 -and $topFiles.Count -eq 0) {
-            $root = $topDirectories[0].FullName
-          }
-
-          $moduleName = "${{ inputs.module_name }}"
-          if ($moduleName -ieq "InSightec_Service_hub") {
-            $hubFile = Get-ChildItem -LiteralPath $extractDir -Recurse -File -Filter "InSightecServiceHub.py" |
-              Where-Object { $_.FullName -notmatch '(?i)[\\/](integrated_sources|tools|plugins|vendor|third_party)[\\/]' } |
-              Sort-Object { $_.FullName.Length } |
-              Select-Object -First 1
-            if (-not $hubFile) {
-              throw "InSightecServiceHub.py was not found outside child-source folders."
-            }
-            $root = $hubFile.Directory.FullName
-          }
-
-          Write-Host ("Application root: " + $root)
-          Get-ChildItem -LiteralPath $root -Force | Select-Object Name, Length, LastWriteTime
-          "root=$root" >> $env:GITHUB_OUTPUT
-
-      - name: Install build dependencies
-        shell: pwsh
-        working-directory: ${{ steps.locate.outputs.root }}
         run: |
           $ErrorActionPreference = "Stop"
           python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pyinstaller nuitka ordered-set zstandard
 
-          if (Test-Path -LiteralPath "requirements-build.txt") {
-            python -m pip install -r requirements-build.txt
-          } elseif (Test-Path -LiteralPath "requirements.txt") {
-            python -m pip install -r requirements.txt
-          }
-
-          # Ensure the generic fallback builder is available.
-          python -m pip install pyinstaller
-
-      - name: Resolve build method and entry point
-        id: plan
+      - name: Build selected module and assemble complete Hub
+        id: build
         shell: pwsh
-        working-directory: ${{ steps.locate.outputs.root }}
         run: |
           $ErrorActionPreference = "Stop"
-          $root = "${{ steps.locate.outputs.root }}"
-          $moduleName = "${{ inputs.module_name }}"
-          $override = "${{ inputs.entry_point_override }}".Trim()
+          Set-StrictMode -Version Latest
 
-          $mode = ""
-          $buildFile = ""
-          $entryPoint = ""
+          function Write-Section([string]$Title) {
+            Write-Host ""
+            Write-Host ("=" * 78)
+            Write-Host $Title
+            Write-Host ("=" * 78)
+          }
 
-          $preferredBat = Join-Path $root "01_BUILD_EXE.bat"
-          if (Test-Path -LiteralPath $preferredBat -PathType Leaf) {
-            $mode = "bat"
-            $buildFile = $preferredBat
-          } else {
-            $rootSpecs = @(Get-ChildItem -LiteralPath $root -File -Filter "*.spec" | Sort-Object Name)
-            if ($rootSpecs.Count -gt 0) {
-              $mode = "spec"
-              $buildFile = $rootSpecs[0].FullName
+          function Find-ModuleDirectory([string[]]$Candidates) {
+            $moduleRoot = Join-Path $env:GITHUB_WORKSPACE "Module"
+            foreach ($candidate in $Candidates) {
+              $exact = Join-Path $moduleRoot $candidate
+              if (Test-Path -LiteralPath $exact -PathType Container) {
+                return (Get-Item -LiteralPath $exact).FullName
+              }
+            }
+            $dirs = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -ErrorAction SilentlyContinue)
+            foreach ($candidate in $Candidates) {
+              $match = $dirs | Where-Object { $_.Name -ieq $candidate } | Select-Object -First 1
+              if ($match) { return $match.FullName }
+            }
+            throw "Module folder was not found. Tried: $($Candidates -join ', ')"
+          }
+
+          function Resolve-SourceZip([string]$ModuleDir, [string]$RequestedName, [string]$WorkName) {
+            $files = @(Get-ChildItem -LiteralPath $ModuleDir -Recurse -File)
+            $normal = @($files | Where-Object { $_.Name -match '(?i)_SOURCE\.zip$' } | Sort-Object LastWriteTimeUtc -Descending)
+            $parts = @($files | Where-Object { $_.Name -match '(?i)\.zip\.part\d{3,}$' })
+            $groups = @{}
+            foreach ($part in $parts) {
+              if ($part.Name -match '^(?<base>.+\.zip)\.part(?<number>\d{3,})$') {
+                $base = $Matches.base
+                if (-not $groups.ContainsKey($base)) { $groups[$base] = @() }
+                $groups[$base] += $part
+              }
+            }
+
+            $requested = $RequestedName.Trim()
+            if ($requested) {
+              $requested = [IO.Path]::GetFileName($requested) -replace '(?i)\.part\d+$',''
+              if ($requested -notmatch '(?i)\.zip$') { $requested += '.zip' }
+            }
+
+            $selectedNormal = $null
+            $selectedBase = $null
+            $selectedParts = @()
+            if ($requested) {
+              $baseMatch = @($groups.Keys | Where-Object { $_ -ieq $requested } | Select-Object -First 1)
+              if ($baseMatch.Count -gt 0) {
+                $selectedBase = [string]$baseMatch[0]
+                $selectedParts = @($groups[$selectedBase])
+              } else {
+                $selectedNormal = $normal | Where-Object { $_.Name -ieq $requested } | Select-Object -First 1
+              }
             } else {
-              if ($override) {
-                $candidate = Join-Path $root $override
-                if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-                  throw "entry_point_override was not found: $candidate"
-                }
-                $entryPoint = $candidate
-              } elseif ($moduleName -ieq "InSightec_Service_hub") {
-                $entryPoint = Join-Path $root "InSightecServiceHub.py"
+              $sets = @(foreach ($base in $groups.Keys) {
+                $setParts = @($groups[$base])
+                [pscustomobject]@{ Base=$base; Parts=$setParts; Latest=($setParts | Measure-Object LastWriteTimeUtc -Maximum).Maximum }
+              })
+              $newestSplit = $sets | Sort-Object Latest -Descending | Select-Object -First 1
+              $newestNormal = $normal | Select-Object -First 1
+              if ($newestSplit -and (-not $newestNormal -or $newestSplit.Latest -ge $newestNormal.LastWriteTimeUtc)) {
+                $selectedBase = $newestSplit.Base
+                $selectedParts = @($newestSplit.Parts)
               } else {
-                $preferredNames = @("main.py", "app.py", "launcher.py")
-                foreach ($name in $preferredNames) {
-                  $candidate = Join-Path $root $name
-                  if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-                    $entryPoint = $candidate
-                    break
-                  }
-                }
-                if (-not $entryPoint) {
-                  $rootPython = @(
-                    Get-ChildItem -LiteralPath $root -File -Filter "*.py" |
-                      Where-Object { $_.Name -notmatch '(?i)^(setup|build|validate|test|conftest)' } |
-                      Sort-Object Name
-                  )
-                  if ($rootPython.Count -eq 1) {
-                    $entryPoint = $rootPython[0].FullName
-                  }
-                }
+                $selectedNormal = $newestNormal
               }
-
-              if (-not $entryPoint -or -not (Test-Path -LiteralPath $entryPoint -PathType Leaf)) {
-                throw "No root build BAT, SPEC, or unambiguous Python entry point was found."
-              }
-              $mode = "pyinstaller"
             }
+
+            if (-not $selectedNormal -and $selectedParts.Count -eq 0) {
+              Write-Host "Files under $ModuleDir:"
+              $files | ForEach-Object { Write-Host (" - " + $_.FullName) }
+              throw "No SOURCE ZIP was found in $ModuleDir"
+            }
+
+            $workDir = Join-Path $env:RUNNER_TEMP ("rc4_zip_" + $WorkName)
+            Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+
+            if ($selectedParts.Count -gt 0) {
+              $selectedParts = @($selectedParts | Sort-Object { [int]([regex]::Match($_.Name,'\.part(\d+)$').Groups[1].Value) })
+              $expected = 1
+              foreach ($part in $selectedParts) {
+                $number = [int]([regex]::Match($part.Name,'\.part(\d+)$').Groups[1].Value)
+                if ($number -ne $expected) { throw "Missing split part. Expected part$('{0:D3}' -f $expected), found $($part.Name)" }
+                if ($part.Length -le 0) { throw "Empty split part: $($part.FullName)" }
+                if ($part.Length -ge 25MB) { throw "Split part is not below 25 MB: $($part.FullName)" }
+                $expected++
+              }
+              $zipPath = Join-Path $workDir $selectedBase
+              $outStream = [IO.File]::Open($zipPath,[IO.FileMode]::Create)
+              try {
+                foreach ($part in $selectedParts) {
+                  Write-Host ("Appending " + $part.Name)
+                  $inStream = [IO.File]::OpenRead($part.FullName)
+                  try { $inStream.CopyTo($outStream) } finally { $inStream.Dispose() }
+                }
+              } finally { $outStream.Dispose() }
+            } else {
+              $zipPath = Join-Path $workDir $selectedNormal.Name
+              Copy-Item -LiteralPath $selectedNormal.FullName -Destination $zipPath -Force
+            }
+
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
+            try {
+              if ($archive.Entries.Count -eq 0) { throw "SOURCE ZIP is empty: $zipPath" }
+            } finally { $archive.Dispose() }
+            Write-Host ("SOURCE: " + $zipPath)
+            Write-Host ("SHA256: " + (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash)
+            return $zipPath
           }
 
-          Write-Host ("Build mode : " + $mode)
-          Write-Host ("Build file : " + $buildFile)
-          Write-Host ("Entry point: " + $entryPoint)
-          "mode=$mode" >> $env:GITHUB_OUTPUT
-          "build_file=$buildFile" >> $env:GITHUB_OUTPUT
-          "entry_point=$entryPoint" >> $env:GITHUB_OUTPUT
+          function Expand-Source([string]$ZipPath, [string]$WorkName) {
+            $extractDir = Join-Path $env:RUNNER_TEMP ("rc4_extract_" + $WorkName)
+            Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+            Expand-Archive -LiteralPath $ZipPath -DestinationPath $extractDir -Force
+            $dirs = @(Get-ChildItem -LiteralPath $extractDir -Directory)
+            $files = @(Get-ChildItem -LiteralPath $extractDir -File)
+            if ($dirs.Count -eq 1 -and $files.Count -eq 0) { return $dirs[0].FullName }
+            return $extractDir
+          }
 
-      - name: Build application
-        shell: pwsh
-        working-directory: ${{ steps.locate.outputs.root }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $mode = "${{ steps.plan.outputs.mode }}"
-
-          if ($mode -eq "bat") {
-            Write-Host "Running dedicated build BAT."
-            & cmd.exe /d /c call "${{ steps.plan.outputs.build_file }}"
-            if ($LASTEXITCODE -ne 0) {
-              throw "Build BAT failed with exit code $LASTEXITCODE"
+          function Find-Root([string]$ExtractRoot, [string[]]$Markers) {
+            foreach ($marker in $Markers) {
+              $direct = Join-Path $ExtractRoot $marker
+              if (Test-Path -LiteralPath $direct -PathType Leaf) { return $ExtractRoot }
             }
-          } elseif ($mode -eq "spec") {
-            python -m PyInstaller --noconfirm --clean "${{ steps.plan.outputs.build_file }}"
-          } elseif ($mode -eq "pyinstaller") {
-            $entry = "${{ steps.plan.outputs.entry_point }}"
-            $name = [System.IO.Path]::GetFileNameWithoutExtension($entry)
-            python -m PyInstaller --noconfirm --clean --windowed --name $name $entry
+            foreach ($marker in $Markers) {
+              $found = Get-ChildItem -LiteralPath $ExtractRoot -Recurse -File -Filter ([IO.Path]::GetFileName($marker)) |
+                Where-Object { $_.FullName -notmatch '(?i)[\\/](tests?|test_data|examples?|backup|old)[\\/]' } |
+                Sort-Object { $_.FullName.Length } | Select-Object -First 1
+              if ($found) { return $found.Directory.FullName }
+            }
+            throw "Application root could not be found. Markers: $($Markers -join ', ')"
+          }
+
+          function Install-Requirements([string]$Root) {
+            Push-Location $Root
+            try {
+              if (Test-Path -LiteralPath "requirements-build.txt") { python -m pip install -r requirements-build.txt }
+              if (Test-Path -LiteralPath "requirements.txt") { python -m pip install -r requirements.txt }
+            } finally { Pop-Location }
+          }
+
+          function Select-BuildFile([string]$Root, [string[]]$PreferredBats, [string[]]$EntryCandidates) {
+            foreach ($bat in $PreferredBats) {
+              $path = Join-Path $Root $bat
+              if (Test-Path -LiteralPath $path -PathType Leaf) {
+                return [pscustomobject]@{ Mode='bat'; File=$path; Entry='' }
+              }
+            }
+            $spec = Get-ChildItem -LiteralPath $Root -File -Filter '*.spec' | Sort-Object Name | Select-Object -First 1
+            if ($spec) { return [pscustomobject]@{ Mode='spec'; File=$spec.FullName; Entry='' } }
+            foreach ($entry in $EntryCandidates) {
+              $path = Join-Path $Root $entry
+              if (Test-Path -LiteralPath $path -PathType Leaf) {
+                return [pscustomobject]@{ Mode='pyinstaller'; File=''; Entry=$path }
+              }
+            }
+            throw "No supported build file or entry point was found in $Root"
+          }
+
+          function Invoke-Build([string]$Root, [object]$Plan) {
+            Push-Location $Root
+            try {
+              $distPath = Join-Path $Root 'dist'
+              Remove-Item -LiteralPath $distPath -Recurse -Force -ErrorAction SilentlyContinue
+
+              # Do not delete a build folder that contains the selected build script.
+              $buildPath = Join-Path $Root 'build'
+              $planPath = if ($Plan.File) { [IO.Path]::GetFullPath($Plan.File) } else { '' }
+              $buildFull = [IO.Path]::GetFullPath($buildPath).TrimEnd('\') + '\'
+              $planIsInsideBuild = $planPath -and $planPath.StartsWith($buildFull,[StringComparison]::OrdinalIgnoreCase)
+              if (-not $planIsInsideBuild) {
+                Remove-Item -LiteralPath $buildPath -Recurse -Force -ErrorAction SilentlyContinue
+              } else {
+                Write-Host 'Preserving build folder because it contains the selected BAT.'
+              }
+
+              if ($Plan.Mode -eq 'bat') {
+                if (-not (Test-Path -LiteralPath $Plan.File -PathType Leaf)) {
+                  throw "Selected build BAT disappeared before execution: $($Plan.File)"
+                }
+                Write-Host ("Running BAT: " + $Plan.File)
+                $command = 'call "' + $Plan.File + '"'
+                & cmd.exe /d /s /c $command
+                if ($LASTEXITCODE -ne 0) { throw "Build BAT failed with exit code $LASTEXITCODE" }
+              } elseif ($Plan.Mode -eq 'spec') {
+                python -m PyInstaller --noconfirm --clean $Plan.File
+                if ($LASTEXITCODE -ne 0) { throw "PyInstaller SPEC build failed with exit code $LASTEXITCODE" }
+              } else {
+                $name = [IO.Path]::GetFileNameWithoutExtension($Plan.Entry)
+                python -m PyInstaller --noconfirm --clean --windowed --name $name $Plan.Entry
+                if ($LASTEXITCODE -ne 0) { throw "PyInstaller entry build failed with exit code $LASTEXITCODE" }
+              }
+            } finally { Pop-Location }
+          }
+
+          function Find-Package([string]$Root, [string[]]$ExeHints) {
+            $searchRoots = @()
+            foreach ($candidate in @('dist','output','release')) {
+              $path = Join-Path $Root $candidate
+              if (Test-Path -LiteralPath $path -PathType Container) { $searchRoots += (Get-Item -LiteralPath $path) }
+            }
+            if ($searchRoots.Count -eq 0) {
+              throw "No recognized build output folder was created under $Root (expected dist, output, or release)."
+            }
+
+            foreach ($hint in $ExeHints) {
+              foreach ($searchRoot in $searchRoots) {
+                $found = Get-ChildItem -LiteralPath $searchRoot.FullName -Recurse -File -Filter $hint -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -notmatch '(?i)(debug|console|uninstall|updater|crash)' } |
+                  Sort-Object Length -Descending | Select-Object -First 1
+                if ($found) { return [pscustomobject]@{ Exe=$found; Package=$found.Directory } }
+              }
+            }
+
+            $fallbacks = @()
+            foreach ($searchRoot in $searchRoots) {
+              $fallbacks += @(Get-ChildItem -LiteralPath $searchRoot.FullName -Recurse -File -Filter '*.exe' -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notmatch '(?i)(debug|console|uninstall|updater|crash)' })
+            }
+            $fallback = $fallbacks | Sort-Object Length -Descending | Select-Object -First 1
+            if (-not $fallback) { throw "No executable was produced under the recognized output folders in $Root" }
+            return [pscustomobject]@{ Exe=$fallback; Package=$fallback.Directory }
+          }
+
+          function Copy-ToolPackage([object]$Package, [string]$Destination) {
+            Remove-Item -LiteralPath $Destination -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+            Copy-Item -Path (Join-Path $Package.Package.FullName '*') -Destination $Destination -Recurse -Force
+            $copiedExe = Join-Path $Destination $Package.Exe.Name
+            if (-not (Test-Path -LiteralPath $copiedExe -PathType Leaf)) {
+              throw "Tool executable was not copied: $copiedExe"
+            }
+            return $copiedExe
+          }
+
+          $selectedModule = "${{ inputs.module_name }}"
+          $requestedZip = "${{ inputs.source_zip }}"
+
+          Write-Section "BUILD SELECTED MODULE: $selectedModule"
+          $selectedDir = Find-ModuleDirectory @($selectedModule)
+          $selectedZip = Resolve-SourceZip $selectedDir $requestedZip 'selected'
+          $selectedExtract = Expand-Source $selectedZip 'selected'
+
+          if ($selectedModule -ine 'InSightec_Service_hub') {
+            $root = Find-Root $selectedExtract @('01_BUILD_EXE.bat','main.py','launcher.py','VIMeasureAnalyzer.py')
+            Install-Requirements $root
+            $plan = Select-BuildFile $root @('01_BUILD_EXE.bat','01_BUILD_EXE_NUITKA.bat','02_BUILD_EXE_NUITKA.bat','build_exe.bat') @('main.py','launcher.py','VIMeasureAnalyzer.py')
+            Invoke-Build $root $plan
+            $package = Find-Package $root @('*.exe')
+            $finalDir = $package.Package.FullName
+            $startupExe = $package.Exe.FullName
           } else {
-            throw "Unsupported build mode: $mode"
+            $hubRoot = Find-Root $selectedExtract @('InSightecServiceHub.py','01_BUILD_EXE.bat')
+            Install-Requirements $hubRoot
+            $hubPlan = Select-BuildFile $hubRoot @('01_BUILD_EXE.bat') @('InSightecServiceHub.py')
+            Invoke-Build $hubRoot $hubPlan
+            $hubPackage = Find-Package $hubRoot @('InSightecServiceHub.exe','InSightec_APAC_Service_Hub.exe')
+            $finalDir = $hubPackage.Package.FullName
+            $startupExe = $hubPackage.Exe.FullName
+            $toolsRoot = Join-Path $finalDir 'tools'
+            New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
+
+            $toolDefinitions = @(
+              [pscustomobject]@{ Id='DOanalysis'; Modules=@('DO_Analysis'); Markers=@('build_exe.bat','DO_Analysis_Qt.py','main.py'); Bats=@('build_exe.bat','01_BUILD_EXE.bat','build_pyinstaller_fallback.bat'); Entries=@('DO_Analysis_Qt.py','main.py'); Exes=@('*DO*Analysis*.exe','*Water*System*.exe') },
+              [pscustomobject]@{ Id='TrackerSNR'; Modules=@('trackerSNR'); Markers=@('build_TrackerSNR_CLEAN_EXE_NUITKA.bat','tracker_snr_app.py','main.py'); Bats=@('build_TrackerSNR_CLEAN_EXE_NUITKA.bat','00_BUILD_EXE_RECOMMENDED_PYINSTALLER.bat','00_BUILD_EXE_ONEDIR_FALLBACK.bat'); Entries=@('tracker_snr_app.py','main.py'); Exes=@('*Tracker*SNR*.exe') },
+              [pscustomobject]@{ Id='LogExplorer'; Modules=@('Log_explorer'); Markers=@('LogMergeTool_NoExcel_Main.py','01_BUILD_EXE_NUITKA.bat'); Bats=@('01_BUILD_EXE_NUITKA.bat'); Entries=@('LogMergeTool_NoExcel_Main.py'); Exes=@('*LogMerge*.exe','*Log*Explorer*.exe') },
+              [pscustomobject]@{ Id='SonicationAnalysis'; Modules=@('Soni'); Markers=@('main.py','01_BUILD_EXE_NUITKA.bat'); Bats=@('build\01_BUILD_EXE.bat','01_BUILD_EXE_NUITKA.bat'); Entries=@('main.py'); Exes=@('*Sonication*Replay*.exe','*Soni*.exe') },
+              [pscustomobject]@{ Id='FUSImageExplore'; Modules=@('FFT'); Markers=@('launcher.py','02_BUILD_EXE_NUITKA.bat'); Bats=@('02_BUILD_EXE_NUITKA.bat','02_BUILD_FAST_STANDALONE.bat'); Entries=@('launcher.py'); Exes=@('MR_Image_Explorer_RC1.exe','*Image*Explorer*.exe') },
+              [pscustomobject]@{ Id='VIMeasure'; Modules=@('VIMeasure'); Markers=@('VIMeasureAnalyzer.py','01_BUILD_EXE_NUITKA.bat'); Bats=@('01_BUILD_EXE_NUITKA.bat'); Entries=@('VIMeasureAnalyzer.py'); Exes=@('*VIMeasure*.exe') }
+            )
+
+            $status = @()
+            foreach ($tool in $toolDefinitions) {
+              Write-Section ("BUILD TOOL FROM REPOSITORY MODULE: " + $tool.Id)
+              $moduleDir = Find-ModuleDirectory $tool.Modules
+              $zip = Resolve-SourceZip $moduleDir '' $tool.Id
+              $extract = Expand-Source $zip $tool.Id
+              $root = Find-Root $extract $tool.Markers
+              Install-Requirements $root
+              $plan = Select-BuildFile $root $tool.Bats $tool.Entries
+              Invoke-Build $root $plan
+              $package = Find-Package $root $tool.Exes
+              $destination = Join-Path $toolsRoot $tool.Id
+              $copiedExe = Copy-ToolPackage $package $destination
+              Write-Host ("[PASS] " + $tool.Id + " => " + $copiedExe)
+              $status += [pscustomobject]@{
+                tool_id = $tool.Id
+                module_directory = $moduleDir
+                source_sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+                executable = [IO.Path]::GetRelativePath($finalDir,$copiedExe)
+                ready = $true
+              }
+            }
+
+            [pscustomobject]@{
+              generated_utc = [DateTime]::UtcNow.ToString('o')
+              source = 'repository_modules'
+              all_ready = ($status.Count -eq 6 -and @($status | Where-Object { -not $_.ready }).Count -eq 0)
+              tools = $status
+            } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $finalDir 'tool_build_status.json') -Encoding UTF8
+
+            if (-not (Test-Path -LiteralPath (Join-Path $finalDir 'tool_build_status.json'))) {
+              throw 'tool_build_status.json was not created.'
+            }
           }
 
-      - name: Locate and validate build output
-        id: artifact
+          $launcher = Join-Path $finalDir 'RUN_APPLICATION.bat'
+          $relativeExe = [IO.Path]::GetRelativePath($finalDir,$startupExe)
+          @('@echo off','cd /d %~dp0',('start "" "' + $relativeExe + '"')) | Set-Content -LiteralPath $launcher -Encoding ASCII
+
+          Write-Host ("FINAL DIRECTORY: " + $finalDir)
+          Write-Host ("STARTUP EXE   : " + $startupExe)
+          "package_dir=$finalDir" >> $env:GITHUB_OUTPUT
+          "startup_exe=$startupExe" >> $env:GITHUB_OUTPUT
+
+      - name: Validate complete Hub package
+        if: ${{ inputs.module_name == 'InSightec_Service_hub' }}
         shell: pwsh
-        working-directory: ${{ steps.locate.outputs.root }}
         run: |
           $ErrorActionPreference = "Stop"
-          $root = "${{ steps.locate.outputs.root }}"
-          $dist = Join-Path $root "dist"
-          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
-            throw "Build output directory was not found: $dist"
+          $package = "${{ steps.build.outputs.package_dir }}"
+          $startup = "${{ steps.build.outputs.startup_exe }}"
+          if (-not (Test-Path -LiteralPath $startup -PathType Leaf)) { throw "Hub startup EXE is missing: $startup" }
+          $required = @('DOanalysis','TrackerSNR','LogExplorer','SonicationAnalysis','FUSImageExplore','VIMeasure')
+          foreach ($id in $required) {
+            $dir = Join-Path (Join-Path $package 'tools') $id
+            if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "Tool directory missing: $dir" }
+            $exe = Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*.exe' |
+              Where-Object { $_.Name -notmatch '(?i)(debug|console|uninstall|updater)' } |
+              Sort-Object Length -Descending | Select-Object -First 1
+            if (-not $exe) { throw "Tool EXE missing: $id" }
+            Write-Host ("[PASS] " + $id + " => " + $exe.FullName)
           }
-
-          $moduleName = "${{ inputs.module_name }}"
-          $packageDir = $null
-          $startupExe = $null
-
-          if ($moduleName -ieq "InSightec_Service_hub") {
-            $knownHubDirs = @(
-              (Join-Path $dist "InSightecServiceHub"),
-              (Join-Path $dist "InSightec_APAC_Service_Hub")
-            )
-            foreach ($candidateDir in $knownHubDirs) {
-              if (Test-Path -LiteralPath $candidateDir -PathType Container) {
-                $packageDir = Get-Item -LiteralPath $candidateDir
-                break
-              }
-            }
-
-            if ($packageDir) {
-              $knownHubExes = @(
-                (Join-Path $packageDir.FullName "InSightecServiceHub.exe"),
-                (Join-Path $packageDir.FullName "InSightec_APAC_Service_Hub.exe")
-              )
-              foreach ($candidateExe in $knownHubExes) {
-                if (Test-Path -LiteralPath $candidateExe -PathType Leaf) {
-                  $startupExe = Get-Item -LiteralPath $candidateExe
-                  break
-                }
-              }
-            }
-          }
-
-          if (-not $packageDir) {
-            $distDirs = @(Get-ChildItem -LiteralPath $dist -Directory)
-            if ($distDirs.Count -eq 1) {
-              $packageDir = $distDirs[0]
-            }
-          }
-
-          if ($packageDir -and -not $startupExe) {
-            $rootExes = @(
-              Get-ChildItem -LiteralPath $packageDir.FullName -File -Filter "*.exe" |
-                Where-Object { $_.Name -notmatch '(?i)(uninstall|updater|debug|console|crash)' } |
-                Sort-Object Length -Descending
-            )
-            if ($rootExes.Count -gt 0) {
-              $startupExe = $rootExes[0]
-            }
-          }
-
-          if (-not $packageDir) {
-            $rootExes = @(
-              Get-ChildItem -LiteralPath $dist -File -Filter "*.exe" |
-                Where-Object { $_.Name -notmatch '(?i)(uninstall|updater|debug|console|crash)' } |
-                Sort-Object Length -Descending
-            )
-            if ($rootExes.Count -eq 0) {
-              Write-Host "dist tree:"
-              Get-ChildItem -LiteralPath $dist -Recurse | ForEach-Object { Write-Host $_.FullName }
-              throw "No application EXE was found under dist."
-            }
-            $packageDir = Get-Item -LiteralPath $dist
-            $startupExe = $rootExes[0]
-          }
-
-          if (-not $startupExe -or -not (Test-Path -LiteralPath $startupExe.FullName -PathType Leaf)) {
-            Write-Host "Selected package tree:"
-            Get-ChildItem -LiteralPath $packageDir.FullName -Recurse | ForEach-Object { Write-Host $_.FullName }
-            throw "No valid startup EXE was found in the configured application package."
-          }
-
-          if ($moduleName -ieq "InSightec_Service_hub") {
-            $toolsDir = Join-Path $packageDir.FullName "tools"
-            if (-not (Test-Path -LiteralPath $toolsDir -PathType Container)) {
-              throw "Hub package is incomplete: tools folder is missing."
-            }
-
-            $requiredToolExecutables = @(
-              @{ Tool = "DO Analysis"; Relative = "DOanalysis\DO Analysis Qt Ver1.0.1.exe" },
-              @{ Tool = "TrackerSNR"; Relative = "TrackerSNR\TrackerSNR_CLEAN_EXE.exe" },
-              @{ Tool = "Log Explore"; Relative = "LogExplorer\LogMergeTool_NoExcel.exe" },
-              @{ Tool = "Sonication Analysis"; Relative = "SonicationAnalysis\Sonication_Replay_Engine.exe" },
-              @{ Tool = "FUS Image Explore"; Relative = "FUSImageExplore\MR_Image_Explorer_RC1.exe" },
-              @{ Tool = "VIMeasure"; Relative = "VIMeasure\VIMeasureAnalyzer.exe" }
-            )
-            $missingTools = @()
-            foreach ($required in $requiredToolExecutables) {
-              $toolExe = Join-Path $toolsDir $required.Relative
-              if (-not (Test-Path -LiteralPath $toolExe -PathType Leaf)) {
-                $missingTools += ($required.Tool + " => " + $toolExe)
-              } else {
-                $size = (Get-Item -LiteralPath $toolExe).Length
-                if ($size -lt 100KB) {
-                  $missingTools += ($required.Tool + " => EXE is unexpectedly small: " + $size + " bytes")
-                } else {
-                  Write-Host ("[PASS] Packaged tool: " + $required.Tool + " | " + [math]::Round($size / 1MB, 1) + " MB")
-                }
-              }
-            }
-            if ($missingTools.Count -gt 0) {
-              Write-Host "Incomplete integrated tool package:"
-              $missingTools | ForEach-Object { Write-Host ("  - " + $_) }
-              throw "Hub package is incomplete: one or more integrated tool EXEs are missing."
-            }
-
-            $toolBuildStatus = Join-Path $packageDir.FullName "tool_build_status.json"
-            if (-not (Test-Path -LiteralPath $toolBuildStatus -PathType Leaf)) {
-              throw "Hub package is incomplete: tool_build_status.json is missing."
-            }
-            $toolStatus = Get-Content -LiteralPath $toolBuildStatus -Raw | ConvertFrom-Json
-            if (-not $toolStatus.all_ready) {
-              throw "Integrated tool build report indicates an incomplete build."
-            }
-          }
-
-          $launcher = Join-Path $packageDir.FullName "RUN_APPLICATION.bat"
-          $relativeExe = [System.IO.Path]::GetRelativePath($packageDir.FullName, $startupExe.FullName)
-          @(
-            "@echo off",
-            "cd /d %~dp0",
-            ('start "" "' + $relativeExe + '"')
-          ) | Set-Content -LiteralPath $launcher -Encoding ASCII
-
-          $info = Join-Path $packageDir.FullName "WORKFLOW_BUILD_INFO.txt"
-          @(
-            ("Module: " + $moduleName),
-            ("Build mode: ${{ steps.plan.outputs.mode }}"),
-            ("Startup EXE: " + $relativeExe),
-            ("Commit: " + $env:GITHUB_SHA),
-            ("Run ID: " + $env:GITHUB_RUN_ID)
-          ) | Set-Content -LiteralPath $info -Encoding UTF8
-
-          Write-Host ("Package directory: " + $packageDir.FullName)
-          Write-Host ("Startup EXE      : " + $startupExe.FullName)
-          "package_dir=$($packageDir.FullName)" >> $env:GITHUB_OUTPUT
-          "startup_exe=$($startupExe.FullName)" >> $env:GITHUB_OUTPUT
+          $report = Get-Content -LiteralPath (Join-Path $package 'tool_build_status.json') -Raw | ConvertFrom-Json
+          if (-not $report.all_ready -or $report.tools.Count -ne 6) { throw 'Tool build report is incomplete.' }
 
       - name: Create distribution ZIP
         id: package
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $moduleName = "${{ inputs.module_name }}"
-          $safeModule = $moduleName -replace '[^A-Za-z0-9._-]', '_'
-          $outputDir = Join-Path $env:RUNNER_TEMP "rc2_artifact"
-          Remove-Item -LiteralPath $outputDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+          $packageDir = "${{ steps.build.outputs.package_dir }}"
+          $startupExe = "${{ steps.build.outputs.startup_exe }}"
+          if (-not (Test-Path -LiteralPath $packageDir -PathType Container)) { throw "Package directory missing: $packageDir" }
+          if (-not (Test-Path -LiteralPath $startupExe -PathType Leaf)) { throw "Startup EXE missing: $startupExe" }
 
-          $zipPath = Join-Path $outputDir ($safeModule + "_RC2_BUILD_" + $env:GITHUB_RUN_NUMBER + ".zip")
-          $packageDir = "${{ steps.artifact.outputs.package_dir }}"
-          $startupExe = "${{ steps.artifact.outputs.startup_exe }}"
-
-          if (-not (Test-Path -LiteralPath $packageDir -PathType Container)) {
-            throw "Package directory no longer exists: $packageDir"
-          }
-          if (-not (Test-Path -LiteralPath $startupExe -PathType Leaf)) {
-            throw "Startup EXE no longer exists: $startupExe"
-          }
-          if (@(Get-ChildItem -LiteralPath $packageDir -Force).Count -eq 0) {
-            throw "Package directory is empty: $packageDir"
-          }
+          $safe = "${{ inputs.module_name }}" -replace '[^A-Za-z0-9._-]','_'
+          $outDir = Join-Path $env:RUNNER_TEMP 'rc4_1_artifact'
+          Remove-Item -LiteralPath $outDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          $zip = Join-Path $outDir ($safe + '_RC4_1_BUILD_' + $env:GITHUB_RUN_NUMBER + '.zip')
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          if (Test-Path -LiteralPath $zipPath) {
-            Remove-Item -LiteralPath $zipPath -Force
-          }
-          [System.IO.Compression.ZipFile]::CreateFromDirectory(
-            $packageDir,
-            $zipPath,
-            [System.IO.Compression.CompressionLevel]::Optimal,
-            $false
-          )
-
-          $relativeStartupExe = [System.IO.Path]::GetRelativePath($packageDir, $startupExe).Replace('\', '/')
-          $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          [IO.Compression.ZipFile]::CreateFromDirectory($packageDir,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip)
           try {
-            if ($archive.Entries.Count -eq 0) {
-              throw "Distribution ZIP is empty."
-            }
-            $entryNames = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
-            if ($entryNames -notcontains $relativeStartupExe) {
-              throw "Distribution ZIP does not contain the startup EXE: $relativeStartupExe"
-            }
-            if ($entryNames -notcontains "RUN_APPLICATION.bat") {
-              throw "Distribution ZIP does not contain RUN_APPLICATION.bat."
-            }
-            Write-Host ("Distribution entries: " + $archive.Entries.Count)
-            Write-Host ("Verified startup EXE: " + $relativeStartupExe)
-          } finally {
-            $archive.Dispose()
-          }
+            if ($archive.Entries.Count -eq 0) { throw 'Distribution ZIP is empty.' }
+            $relativeExe = [IO.Path]::GetRelativePath($packageDir,$startupExe).Replace('\','/')
+            $names = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
+            if ($names -notcontains $relativeExe) { throw "ZIP does not contain startup EXE: $relativeExe" }
+            if ($names -notcontains 'RUN_APPLICATION.bat') { throw 'ZIP does not contain RUN_APPLICATION.bat.' }
+            Write-Host ("ZIP entries: " + $archive.Entries.Count)
+          } finally { $archive.Dispose() }
 
-          Write-Host ("Distribution ZIP: " + $zipPath)
-          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
-          "artifact_name=$($safeModule)_RC2_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
+          "zip_path=$zip" >> $env:GITHUB_OUTPUT
+          "artifact_name=$($safe)_RC4_1_BUILD_$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
 
       - name: Upload versioned artifact
         uses: actions/upload-artifact@v4
