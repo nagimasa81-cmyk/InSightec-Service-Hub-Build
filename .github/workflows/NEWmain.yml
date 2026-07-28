@@ -1,4 +1,4 @@
-name: Build Selected Module RC1 Runtime Complete R6 - Resilient Executable Discovery
+name: Build Selected Module RC1 R8 - VIMeasure Native Handoff Triple Check
 
 on:
   workflow_dispatch:
@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - Soni
+          - VIMeasure
           - ExAna
           - FFT
           - trackerSNR
@@ -23,7 +24,7 @@ on:
           - FUSSIM
           - SPC
       source_zip:
-        description: "Optional exact SOURCE ZIP filename. Leave blank to use the latest name in the selected module."
+        description: "Optional SOURCE ZIP base filename. Supports either a normal *_SOURCE.zip or split files named *.zip.part001, *.part002, etc. Leave blank to use the latest source name."
         required: false
         default: ""
         type: string
@@ -99,23 +100,90 @@ jobs:
           }
 
           $requestedZip = "${{ inputs.source_zip }}".Trim()
-          if (-not [string]::IsNullOrWhiteSpace($requestedZip)) {
-            $zip = Get-ChildItem -Path $moduleDir -Recurse -File |
-              Where-Object { $_.Name -eq $requestedZip } |
-              Select-Object -First 1
-            if (-not $zip) {
-              throw "Requested SOURCE ZIP was not found in selected module: $requestedZip"
-            }
-          } else {
-            # Git checkout timestamps are not reliable, so latest is selected by filename.
-            $zip = Get-ChildItem -Path $moduleDir -Recurse -File -Filter "*_SOURCE.zip" |
-              Sort-Object Name -Descending |
-              Select-Object -First 1
+          $allFiles = @(Get-ChildItem -Path $moduleDir -Recurse -File)
+
+          # A source may be stored as one normal ZIP or as GitHub-upload-friendly
+          # binary parts: <name>_SOURCE.zip.part001, .part002, ...
+          $normalZips = @($allFiles | Where-Object { $_.Name -like "*_SOURCE.zip" })
+          $splitParts = @($allFiles | Where-Object { $_.Name -match '^(?<base>.+_SOURCE\.zip)\.part(?<number>\d{3,})$' })
+          $splitGroups = @{}
+          foreach ($part in $splitParts) {
+            if ($part.Name -notmatch '^(?<base>.+_SOURCE\.zip)\.part(?<number>\d{3,})$') { continue }
+            $baseName = $Matches.base
+            if (-not $splitGroups.ContainsKey($baseName)) { $splitGroups[$baseName] = @() }
+            $splitGroups[$baseName] += $part
           }
 
-          if (-not $zip) {
-            throw "No *_SOURCE.zip was found under: $moduleDir"
+          $selectedBaseName = $null
+          $zip = $null
+          $parts = @()
+
+          if (-not [string]::IsNullOrWhiteSpace($requestedZip)) {
+            $requestedBase = $requestedZip -replace '\.part\d{3,}$', ''
+            $zip = $normalZips | Where-Object { $_.Name -eq $requestedBase } | Select-Object -First 1
+            if (-not $zip -and $splitGroups.ContainsKey($requestedBase)) {
+              $selectedBaseName = $requestedBase
+              $parts = @($splitGroups[$requestedBase] | Sort-Object Name)
+            }
+            if (-not $zip -and $parts.Count -eq 0) {
+              throw "Requested SOURCE ZIP or split SOURCE parts were not found: $requestedZip"
+            }
+          } else {
+            $candidateNames = @($normalZips | ForEach-Object { $_.Name }) + @($splitGroups.Keys)
+            $selectedBaseName = $candidateNames | Sort-Object -Descending | Select-Object -First 1
+            if ($selectedBaseName) {
+              $zip = $normalZips | Where-Object { $_.Name -eq $selectedBaseName } | Select-Object -First 1
+              if (-not $zip -and $splitGroups.ContainsKey($selectedBaseName)) {
+                $parts = @($splitGroups[$selectedBaseName] | Sort-Object Name)
+              }
+            }
           }
+
+          if (-not $zip -and $parts.Count -eq 0) {
+            throw "No *_SOURCE.zip or *_SOURCE.zip.partNNN files were found under: $moduleDir"
+          }
+
+          $assembledDir = Join-Path $env:RUNNER_TEMP "assembled_source"
+          Remove-Item $assembledDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $assembledDir | Out-Null
+
+          if ($parts.Count -gt 0) {
+            # Verify numbering is continuous before joining.
+            $expected = 1
+            foreach ($part in $parts) {
+              if ($part.Name -notmatch '\.part(?<number>\d{3,})$') {
+                throw "Invalid split part name: $($part.Name)"
+              }
+              $actual = [int]$Matches.number
+              if ($actual -ne $expected) {
+                throw "Missing or out-of-order split part. Expected part$('{0:D3}' -f $expected), found $($part.Name)"
+              }
+              if ($part.Length -ge 25MB) {
+                throw "Split part is not below 25 MB: $($part.Name) ($($part.Length) bytes)"
+              }
+              $expected++
+            }
+
+            $assembledZip = Join-Path $assembledDir $selectedBaseName
+            $output = [System.IO.File]::Open($assembledZip, [System.IO.FileMode]::Create)
+            try {
+              foreach ($part in $parts) {
+                Write-Host "Joining: $($part.Name) ($($part.Length) bytes)"
+                $input = [System.IO.File]::OpenRead($part.FullName)
+                try { $input.CopyTo($output) } finally { $input.Dispose() }
+              }
+            } finally { $output.Dispose() }
+            $zip = Get-Item $assembledZip
+            Write-Host "Reassembled ZIP: $($zip.FullName)"
+          }
+
+          # Validate the resulting ZIP before extraction.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          try {
+            if ($archive.Entries.Count -eq 0) { throw "SOURCE ZIP is empty: $($zip.FullName)" }
+            Write-Host "ZIP entries: $($archive.Entries.Count)"
+          } finally { $archive.Dispose() }
 
           $extractDir = Join-Path $env:RUNNER_TEMP "selected_module_source"
           Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -426,7 +494,9 @@ jobs:
         with:
           python-version: "3.13"
           cache: "pip"
-          cache-dependency-path: "Module/${{ inputs.module_name }}/**/*_SOURCE.zip"
+          cache-dependency-path: |
+            Module/${{ inputs.module_name }}/**/*_SOURCE.zip
+            Module/${{ inputs.module_name }}/**/*_SOURCE.zip.part*
 
       - name: Install dependencies
         shell: pwsh
