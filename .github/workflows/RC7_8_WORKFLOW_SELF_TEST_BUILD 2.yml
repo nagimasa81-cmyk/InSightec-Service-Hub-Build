@@ -54,7 +54,7 @@ jobs:
         shell: pwsh
         run: |
           $args = @(
-            ".github/scripts/build_hub_rc7_8.py",
+            ".github/scripts/build_hub_rc8.py",
             "--workspace", "$env:GITHUB_WORKSPACE",
             "--module-name", "${{ inputs.module_name }}"
           )
