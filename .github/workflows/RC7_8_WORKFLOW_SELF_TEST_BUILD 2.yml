@@ -46,8 +46,8 @@ jobs:
       - name: Validate RC7.8 build script
         shell: pwsh
         run: |
-          python -m py_compile .github/scripts/build_hub_rc7_8.py
-          python .github/scripts/build_hub_rc7_8.py --self-test
+          python -m py_compile .github/scripts/build_hub_rc8.py
+          python .github/scripts/build_hub_rc8.py --self-test
 
       - name: RC7.8 all-module preflight and build
         id: build_rc77
