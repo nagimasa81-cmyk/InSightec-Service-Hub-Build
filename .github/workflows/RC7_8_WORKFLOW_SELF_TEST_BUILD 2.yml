@@ -1,4 +1,4 @@
-name: Build Selected Module RC7.8 - Source Validator Gate and Deterministic Build
+name: Build  Module RC7.8 - Source Validator Gate and Deterministic Build
 
 on:
   workflow_dispatch:
