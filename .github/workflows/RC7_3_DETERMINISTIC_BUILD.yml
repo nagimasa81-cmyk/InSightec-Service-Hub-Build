@@ -1,0 +1,109 @@
+name: Build Selected Module RC7.3 - Deterministic BAT Invocation and Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      module_name:
+        description: Select Module
+        required: true
+        type: choice
+        default: InSightec_Service_hub
+        options:
+          - InSightec_Service_hub
+      preflight_only:
+        description: Run all-module preflight only
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  INSIGHTEC_RELEASE_MODE: "1"
+  INSIGHTEC_EXTERNAL_TOOL_ASSEMBLY: "1"
+  PYTHONUTF8: "1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Upgrade common build tools
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pyinstaller nuitka ordered-set zstandard
+
+      - name: RC7.3 all-module preflight and build
+        id: build_rc73
+        shell: pwsh
+        run: |
+          $args = @(
+            ".github/scripts/build_hub_rc7_3.py",
+            "--workspace", "$env:GITHUB_WORKSPACE",
+            "--module-name", "${{ inputs.module_name }}"
+          )
+          if ("${{ inputs.preflight_only }}" -eq "true") { $args += "--preflight-only" }
+          python @args
+
+      - name: Upload complete preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC7_3_Native_Handoff_Preflight_Report
+          path: RC7_3_PREFLIGHT_REPORT.json
+          if-no-files-found: warn
+
+      - name: Validate complete Hub package
+        if: ${{ success() && inputs.preflight_only == false }}
+        shell: pwsh
+        run: |
+          $package = "${{ steps.build_rc73.outputs.package_dir }}"
+          $startup = "${{ steps.build_rc73.outputs.startup_exe }}"
+          if (-not (Test-Path -LiteralPath $package -PathType Container)) { throw "Package directory missing: $package" }
+          if (-not (Test-Path -LiteralPath $startup -PathType Leaf)) { throw "Startup EXE missing: $startup" }
+          $required = @("DOanalysis","TrackerSNR","LogExplorer","SonicationAnalysis","FUSImageExplore","VIMeasure")
+          foreach ($tool in $required) {
+            $dir = Join-Path (Join-Path $package "tools") $tool
+            if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "Tool package missing: $tool" }
+            $exe = Get-ChildItem -LiteralPath $dir -Recurse -File -Filter "*.exe" | Where-Object { $_.Length -gt 100KB } | Select-Object -First 1
+            if (-not $exe) { throw "Valid tool EXE missing: $tool" }
+          }
+          $status = Get-Content -LiteralPath (Join-Path $package "tool_build_status.json") -Raw | ConvertFrom-Json
+          if (-not $status.all_ready -or $status.tools.Count -ne 6) { throw "tool_build_status.json is incomplete" }
+
+      - name: Create and verify distribution ZIP
+        if: ${{ success() && inputs.preflight_only == false }}
+        id: package
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $package = "${{ steps.build_rc73.outputs.package_dir }}"
+          $zip = Join-Path $env:RUNNER_TEMP "InSightec_APAC_Service_Hub_RC7_3_DISTRIBUTION.zip"
+          if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($package, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            if ($archive.Entries.Count -eq 0) { throw "Distribution ZIP is empty" }
+            $exeEntries = @($archive.Entries | Where-Object { $_.FullName -match '(?i)\.exe$' -and $_.Length -gt 100KB })
+            if ($exeEntries.Count -lt 7) { throw "Distribution ZIP lacks Hub plus six valid EXEs" }
+          } finally { $archive.Dispose() }
+          "distribution_zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Upload complete Hub artifact
+        if: ${{ success() && inputs.preflight_only == false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: InSightec_APAC_Service_Hub_RC7_3_COMPLETE
+          path: ${{ steps.package.outputs.distribution_zip }}
+          if-no-files-found: error
+          retention-days: 14
