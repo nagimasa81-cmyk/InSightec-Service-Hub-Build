@@ -1,0 +1,205 @@
+name: Build Complaint Service Hub 0003u39
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build 0003u39 Windows Standalone
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Locate 0003u39 source ZIP
+        id: source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $exactNames = @(
+            'Complaint_Service_Hub_v0_5_Alpha_Commit_0003u39_PREVIEW_MAIL_MODE_OUTLOOK_PORTABILITY_SOURCE.zip',
+            'Complaint_Service_Hub_v0_5_Alpha_Commit_0003u39_PREVIEW_MAIL_MODE_OUTLOOK_PORTABILITY_SOURCE(1).zip'
+          )
+
+          $searchRoots = @(
+            (Join-Path $env:GITHUB_WORKSPACE 'Module/Complaint_service_hub'),
+            (Join-Path $env:GITHUB_WORKSPACE 'Module/Complaint_Service_Hub'),
+            (Join-Path $env:GITHUB_WORKSPACE 'Module'),
+            $env:GITHUB_WORKSPACE
+          ) | Where-Object { Test-Path -LiteralPath $_ -PathType Container }
+
+          $zip = $null
+
+          foreach ($root in $searchRoots) {
+            foreach ($name in $exactNames) {
+              $candidate = Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq $name } |
+                Select-Object -First 1
+
+              if ($candidate) {
+                $zip = $candidate.FullName
+                break
+              }
+            }
+
+            if ($zip) {
+              break
+            }
+          }
+
+          if (-not $zip) {
+            $zip = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -File -Filter '*.zip' -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -match 'Complaint_Service_Hub' -and
+                $_.Name -match '0003u39' -and
+                $_.Name -match 'SOURCE' -and
+                $_.Name -notmatch '(?i)(artifact|distribution|release|built|program_update|master_update)'
+              } |
+              Sort-Object LastWriteTimeUtc -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+
+          if (-not $zip) {
+            throw 'Commit 0003u39 source ZIP was not found in the repository.'
+          }
+
+          Write-Host "Selected source ZIP: $zip"
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Extract source ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $sourceDir = Join-Path $env:RUNNER_TEMP 'Complaint_Service_Hub_0003u39_Source'
+
+          if (Test-Path -LiteralPath $sourceDir) {
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $sourceDir | Out-Null
+          Expand-Archive -LiteralPath '${{ steps.source.outputs.zip }}' -DestinationPath $sourceDir -Force
+
+          $buildBat = Get-ChildItem -LiteralPath $sourceDir -Recurse -File -Filter 'BUILD_EXE.bat' |
+            Select-Object -First 1
+
+          if (-not $buildBat) {
+            throw 'BUILD_EXE.bat was not found after extracting the 0003u39 source ZIP.'
+          }
+
+          $projectRoot = $buildBat.Directory.FullName
+
+          if (-not (Test-Path -LiteralPath (Join-Path $projectRoot '01_BUILD_EXE_NUITKA.bat') -PathType Leaf)) {
+            throw '01_BUILD_EXE_NUITKA.bat was not found in the project root.'
+          }
+
+          Write-Host "Project root: $projectRoot"
+          "PROJECT_ROOT=$projectRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Prepare batch files for CI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          Get-ChildItem -LiteralPath $env:PROJECT_ROOT -File -Filter '*.bat' |
+            ForEach-Object {
+              $content = Get-Content -LiteralPath $_.FullName -Raw
+              $content = [regex]::Replace(
+                $content,
+                '(?im)^[ \t]*pause[ \t]*$',
+                'rem CI: pause disabled'
+              )
+              Set-Content -LiteralPath $_.FullName -Value $content -Encoding ascii
+            }
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Show source metadata
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          python --version
+
+          if (Test-Path -LiteralPath 'version.json') {
+            Write-Host '--- version.json ---'
+            Get-Content -LiteralPath 'version.json'
+          }
+
+          if (Test-Path -LiteralPath 'app_version.json') {
+            Write-Host '--- app_version.json ---'
+            Get-Content -LiteralPath 'app_version.json'
+          }
+
+          if (Test-Path -LiteralPath 'manifest.json') {
+            Write-Host '--- manifest.json ---'
+            Get-Content -LiteralPath 'manifest.json'
+          }
+
+      - name: Build Complaint Service Hub
+        shell: cmd
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: call BUILD_EXE.bat
+
+      - name: Verify standalone distribution
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $root = Join-Path $env:PROJECT_ROOT 'dist/Complaint_Service_Hub'
+
+          if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+            throw "Distribution folder was not created: $root"
+          }
+
+          $required = @(
+            'Complaint_Service_Hub_Launcher.exe',
+            'Complaint_Service_Hub.exe',
+            'Complaint_Service_Hub_Updater.exe',
+            'version.json',
+            'app_version.json',
+            'manifest.json',
+            'BUILD_INFO.txt'
+          )
+
+          foreach ($name in $required) {
+            $path = Join-Path $root $name
+
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Missing required distribution file: $name"
+            }
+          }
+
+          $info = Get-Content -LiteralPath (Join-Path $root 'BUILD_INFO.txt') -Raw
+
+          if ($info -notmatch 'BuildMode=standalone') {
+            throw 'BUILD_INFO.txt does not declare BuildMode=standalone.'
+          }
+
+          if ($info -notmatch 'BuildEngine=Nuitka') {
+            throw 'BUILD_INFO.txt does not declare BuildEngine=Nuitka.'
+          }
+
+          Write-Host '--- Distribution files ---'
+          Get-ChildItem -LiteralPath $root -File |
+            Sort-Object Name |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
+
+      - name: Upload 0003u39 standalone artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Complaint_Service_Hub_0003u39_Windows_Standalone
+          path: ${{ env.PROJECT_ROOT }}/dist/Complaint_Service_Hub/**
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 30
