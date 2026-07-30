@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import zipfile
 from dataclasses import dataclass
@@ -332,26 +333,47 @@ def find_distribution(stage: Path) -> tuple[Path, Path]:
     return payload, exe
 
 
-def artifact_filename(module: str, variant: str, version: str, guide: bool) -> str:
+def artifact_name(module: str, variant: str, version: str, guide: bool) -> str:
+    """Return the GitHub Artifact name. GitHub itself adds the outer ZIP on download."""
     key = f"{module}:{variant}" if module == HUB_MODULE else module
     base = ARTIFACT_NAMES.get(key, re.sub(r"[^A-Za-z0-9]", "", module))
     clean = re.sub(r"(?i)^RC", "", str(version)).strip()
-    return f"{base}_RC{clean}{'G' if guide else ''}.zip"
+    return f"{base}_RC{clean}{'G' if guide else ''}"
 
 
-def make_zip(payload: Path, output: Path, stage: Path) -> None:
+def prepare_package(payload: Path, package_dir: Path, stage: Path) -> None:
+    """Create the directory uploaded by actions/upload-artifact.
+
+    Do not create a distributable ZIP here. upload-artifact produces the one and only
+    downloaded ZIP. This prevents GitHub artifact ZIP -> product ZIP nesting.
+    """
+    shutil.rmtree(package_dir, ignore_errors=True)
+    package_dir.mkdir(parents=True, exist_ok=True)
+    for path in sorted(payload.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() == ".zip":
+            raise RuntimeError(f"Nested ZIP detected in build payload: {path.relative_to(payload)}")
+        relative = path.relative_to(payload)
+        target = package_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+    for name in ("version.json", "build_options.json", "hub_manifest.json", "manifest.json"):
+        source = stage / name
+        target = package_dir / name
+        if source.is_file() and not target.exists():
+            shutil.copy2(source, target)
+
+
+def make_verification_zip(package_dir: Path, output: Path) -> None:
+    """Create a temporary ZIP only for Triple Check; it is never uploaded."""
     output.parent.mkdir(parents=True, exist_ok=True)
-    temp = output.with_suffix(".zip.tmp")
-    if temp.exists(): temp.unlink()
-    with zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for path in sorted(payload.rglob("*")):
-            if path.is_file() and path.suffix.lower() != ".zip":
-                archive.write(path, path.relative_to(payload))
-        for name in ("version.json", "build_options.json", "hub_manifest.json", "manifest.json"):
-            path = stage / name
-            if path.is_file() and not (payload / name).exists():
-                archive.write(path, name)
-    temp.replace(output)
+    if output.exists():
+        output.unlink()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for path in sorted(package_dir.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(package_dir))
 
 
 def validate_manifest_data(manifest: dict, opts: Options, meta: dict) -> bool:
@@ -380,83 +402,236 @@ def validate_manifest(stage: Path, opts: Options, meta: dict) -> bool:
         return False
 
 
-def inspect_artifact(artifact: Path, opts: Options | None = None, meta: dict | None = None) -> tuple[bool, bool, bool, bool, bool]:
-    if not artifact.is_file() or artifact.stat().st_size == 0 or not zipfile.is_zipfile(artifact):
+def inspect_package(package_dir: Path, opts: Options | None = None, meta: dict | None = None) -> tuple[bool, bool, bool, bool, bool]:
+    if not package_dir.is_dir():
         return False, False, False, False, False
-    with zipfile.ZipFile(artifact) as archive:
-        names = archive.namelist()
-        safe = all(name and not name.startswith(("/", "\\")) and ".." not in Path(name).parts for name in names)
-        no_double = not any(name.lower().endswith(".zip") for name in names)
-        has_exe = any(name.lower().endswith(".exe") for name in names)
+    files = [p for p in package_dir.rglob("*") if p.is_file()]
+    safe = bool(files) and all(package_dir.resolve() in p.resolve().parents for p in files)
+    no_double = not any(p.suffix.lower() == ".zip" for p in files)
+    has_exe = any(p.suffix.lower() == ".exe" for p in files)
+    has_options = (package_dir / "build_options.json").is_file()
+    manifest_name = "hub_manifest.json" if opts and opts.module_name == HUB_MODULE else "manifest.json"
+    manifest_ok = False
+    manifest_path = package_dir / manifest_name
+    if opts and meta and manifest_path.is_file():
+        try:
+            manifest_ok = validate_manifest_data(load_json(manifest_path), opts, meta)
+        except Exception:
+            manifest_ok = False
+    return safe, no_double, has_exe, has_options, manifest_ok
+
+
+def inspect_verification_zip(archive_path: Path, opts: Options, meta: dict) -> tuple[bool, bool, bool, bool, bool]:
+    if not archive_path.is_file() or not zipfile.is_zipfile(archive_path):
+        return False, False, False, False, False
+    with zipfile.ZipFile(archive_path) as archive:
+        names = [n for n in archive.namelist() if not n.endswith("/")]
+        safe = bool(names) and all(n and not n.startswith(("/", "\\")) and ".." not in Path(n).parts for n in names)
+        no_double = not any(n.lower().endswith(".zip") for n in names)
+        has_exe = any(n.lower().endswith(".exe") for n in names)
         has_options = "build_options.json" in names
-        manifest_name = "hub_manifest.json" if opts and opts.module_name == HUB_MODULE else "manifest.json"
+        manifest_name = "hub_manifest.json" if opts.module_name == HUB_MODULE else "manifest.json"
         manifest_ok = False
-        if opts and meta and manifest_name in names:
+        if manifest_name in names:
             try:
                 manifest_ok = validate_manifest_data(json.loads(archive.read(manifest_name).decode("utf-8-sig")), opts, meta)
             except Exception:
                 manifest_ok = False
     return safe, no_double, has_exe, has_options, manifest_ok
 
-def run_triple_check(stage: Path, payload: Path, exe: Path, artifact: Path, opts: Options, meta: dict) -> dict[str, bool]:
-    safe, no_double, has_exe, has_options, artifact_manifest = inspect_artifact(artifact, opts, meta)
+
+def startup_smoke_test(exe: Path, timeout_seconds: int = 12) -> tuple[bool, str]:
+    """Detect immediate PyInstaller/Nuitka startup crashes before publishing an artifact."""
+    if os.name != "nt":
+        return True, "Skipped outside Windows"
+    env_map = os.environ.copy()
+    env_map["INSIGHTEC_BUILD_SMOKE_TEST"] = "1"
+    try:
+        process = subprocess.Popen(
+            [str(exe)], cwd=exe.parent, env=env_map,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            code = process.returncode
+            detail = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
+            if code == 0:
+                return True, detail or "Process exited normally"
+            return False, detail or f"Process exited immediately with code {code}"
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            return True, f"Process remained running for {timeout_seconds}s"
+    except Exception as exc:
+        return False, f"Unable to launch EXE: {exc}"
+
+
+def run_triple_check(stage: Path, payload: Path, exe: Path, package_dir: Path,
+                     opts: Options, meta: dict) -> tuple[dict[str, bool], str]:
+    p_safe, p_no_double, p_has_exe, p_has_options, p_manifest = inspect_package(package_dir, opts, meta)
     options = load_json(stage / "build_options.json")
-    return {
+    smoke_ok, smoke_detail = startup_smoke_test(exe)
+    checks = {
         "version.json": (stage / "version.json").is_file() and bool(meta.get("version")),
-        "manifest": validate_manifest(stage, opts, meta) and artifact_manifest,
+        "manifest": validate_manifest(stage, opts, meta) and p_manifest,
         "Module": opts.module_name in find_modules(),
-        "ZIP structure": safe and has_exe and has_options,
+        "Package structure": p_safe and p_has_exe and p_has_options,
         "BAT": any(stage.rglob("*.bat")),
         "SPEC/build definition": bool(any(stage.rglob("*.spec")) or any(stage.rglob("Build_*EXE.py")) or (stage / "pyproject.toml").is_file() or choose_entry(stage, meta)),
         "Python syntax": python_syntax_check(stage) >= 1,
         "dist generated": payload.is_dir() and any(payload.iterdir()),
         "EXE generated": exe.is_file() and exe.stat().st_size > 0,
-        "Artifact generated": artifact.is_file() and artifact.stat().st_size > 0,
-        "No double ZIP": no_double,
+        "EXE startup smoke test": smoke_ok,
+        "Artifact payload generated": package_dir.is_dir() and any(package_dir.iterdir()),
+        "No double ZIP": p_no_double and z_no_double,
         "Hub Variant": opts.module_name != HUB_MODULE or meta.get("hub_variant") == opts.hub_variant,
-        "Guide settings": options.get("hub_guide_enabled") == opts.hub_guide and options.get("module_guide_enabled") == opts.module_guide and has_options,
+        "Guide settings": options.get("hub_guide_enabled") == opts.hub_guide and options.get("module_guide_enabled") == opts.module_guide and p_has_options,
         "Python version": actual_python_version() == PYTHON_VERSION,
     }
+    return checks, smoke_detail
 
 
-def write_report(path: Path, checks: dict[str, bool], key: str, source: Path, artifact: Path, opts: Options) -> None:
-    write_json(path, {"schema": "rc9", "result": "PASS" if all(checks.values()) else "FAIL", "cache_key": key,
-        "source_sha256": sha256_file(source), "build_py_sha256": sha256_file(Path(__file__)), "artifact": artifact.name,
-        "artifact_sha256": sha256_file(artifact) if artifact.is_file() else "", "python_version": actual_python_version(),
-        "hub_variant": opts.hub_variant if opts.module_name == HUB_MODULE else "not_applicable", "hub_guide_enabled": opts.hub_guide, "module_guide_enabled": opts.module_guide, "checks": checks})
+def directory_sha256(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file() and p.name != "triple_check.json"):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(sha256_file(path).encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
-def save_cache(cache_dir: Path, artifact: Path, report: Path) -> bool:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(artifact, cache_dir / artifact.name)
-    shutil.copy2(report, cache_dir / report.name)
-    return sha256_file(cache_dir / artifact.name) == sha256_file(artifact)
+def write_report(path: Path, checks: dict[str, bool], key: str, source: Path,
+                 artifact_name_value: str, package_dir: Path, opts: Options, smoke_detail: str) -> None:
+    write_json(path, {
+        "schema": "rc9",
+        "result": "PASS" if all(checks.values()) else "FAIL",
+        "cache_key": key,
+        "source_sha256": sha256_file(source),
+        "build_py_sha256": sha256_file(Path(__file__)),
+        "artifact": artifact_name_value,
+        "artifact_payload_sha256": directory_sha256(package_dir),
+        "python_version": actual_python_version(),
+        "hub_variant": opts.hub_variant if opts.module_name == HUB_MODULE else "not_applicable",
+        "hub_guide_enabled": opts.hub_guide,
+        "module_guide_enabled": opts.module_guide,
+        "startup_smoke_test_detail": smoke_detail,
+        "checks": checks,
+    })
+
+
+def save_cache(cache_dir: Path, package_dir: Path, report: Path) -> bool:
+    shutil.rmtree(cache_dir, ignore_errors=True)
+    cached_package = cache_dir / "package"
+    cached_package.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(package_dir, cached_package)
+    shutil.copy2(report, cache_dir / "triple_check.json")
+    return directory_sha256(cached_package) == directory_sha256(package_dir)
 
 
 def restore_cache(cache_dir: Path, key: str, source: Path, opts: Options) -> bool:
-    reports = sorted(cache_dir.glob("*.triple_check.json")) if cache_dir.is_dir() else []
-    if not reports: return False
+    report_path = cache_dir / "triple_check.json"
+    cached_package = cache_dir / "package"
+    if not report_path.is_file() or not cached_package.is_dir():
+        return False
     try:
-        report = load_json(reports[-1]); artifact = cache_dir / report["artifact"]
-        safe, no_double, has_exe, has_options, _ = inspect_artifact(artifact)
-        valid = all([report.get("result") == "PASS", report.get("cache_key") == key,
-            report.get("source_sha256") == sha256_file(source), report.get("build_py_sha256") == sha256_file(Path(__file__)),
-            report.get("artifact_sha256") == sha256_file(artifact), report.get("python_version") == actual_python_version(),
-            report.get("hub_variant") == (opts.hub_variant if opts.module_name == HUB_MODULE else "not_applicable"), report.get("hub_guide_enabled") == opts.hub_guide,
-            report.get("module_guide_enabled") == opts.module_guide, safe, no_double, has_exe, has_options,
-            all(report.get("checks", {}).values())])
+        report = load_json(report_path)
+        safe, no_double, has_exe, has_options, _ = inspect_package(cached_package)
+        valid = all([
+            report.get("result") == "PASS",
+            report.get("cache_key") == key,
+            report.get("source_sha256") == sha256_file(source),
+            report.get("build_py_sha256") == sha256_file(Path(__file__)),
+            report.get("artifact_payload_sha256") == directory_sha256(cached_package),
+            report.get("python_version") == actual_python_version(),
+            report.get("hub_variant") == (opts.hub_variant if opts.module_name == HUB_MODULE else "not_applicable"),
+            report.get("hub_guide_enabled") == opts.hub_guide,
+            report.get("module_guide_enabled") == opts.module_guide,
+            safe, no_double, has_exe, has_options,
+            all(report.get("checks", {}).values()),
+        ])
     except Exception as exc:
-        print("[WARN] Cache validation failed:", exc); return False
-    if not valid: return False
-    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(artifact, OUTPUT_ROOT / artifact.name); shutil.copy2(reports[-1], OUTPUT_ROOT / reports[-1].name)
-    print("[PASS] Cache restored:", artifact.name); return True
+        print("[WARN] Cache validation failed:", exc)
+        return False
+    if not valid:
+        return False
+    artifact_name_value = str(report["artifact"])
+    output_package = OUTPUT_ROOT / artifact_name_value
+    shutil.copytree(cached_package, output_package)
+    shutil.copy2(report_path, output_package / "triple_check.json")
+    publish_github_outputs(artifact_name_value, output_package)
+    print("[PASS] Cache restored:", artifact_name_value)
+    return True
 
 
 def prune_cache(limit: int = 20) -> None:
-    if not CACHE_ROOT.is_dir(): return
+    if not CACHE_ROOT.is_dir():
+        return
     dirs = sorted((p for p in CACHE_ROOT.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime_ns, reverse=True)
-    for old in dirs[limit:]: shutil.rmtree(old, ignore_errors=True)
+    for old in dirs[limit:]:
+        shutil.rmtree(old, ignore_errors=True)
+
+
+def publish_github_outputs(name: str, package_dir: Path) -> None:
+    output_file = env("GITHUB_OUTPUT")
+    if output_file:
+        with Path(output_file).open("a", encoding="utf-8") as stream:
+            stream.write(f"artifact_name={name}\n")
+            stream.write(f"artifact_path={package_dir.resolve()}\n")
+    print("[INFO] GitHub Artifact name:", name)
+    print("[INFO] GitHub Artifact payload:", package_dir)
+
+
+
+def inspect_source_zip_for_rc9(source: Path) -> tuple[bool, str]:
+    """Static audit used for every SOURCE ZIP present in Module folders."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="rc9_audit_") as temp:
+            root = Path(temp) / "extract"
+            root.mkdir()
+            safe_extract(source, root)
+            root = unwrap(root)
+            version = root / "version.json"
+            if not version.is_file():
+                return False, "version.json missing"
+            meta = load_json(version)
+            if not (meta.get("version") or meta.get("release")):
+                return False, "version/release missing"
+            definitions = list(root.rglob("*.spec")) + list(root.rglob("Build_*EXE.py"))
+            entry = choose_entry(root, meta)
+            if not definitions and not (root / "pyproject.toml").is_file() and not entry:
+                return False, "SPEC/build definition missing"
+            py_files = [p for p in root.rglob("*.py") if not any(part in {"build", "dist", "release", "__pycache__"} for part in p.parts)]
+            for path in py_files:
+                py_compile.compile(str(path), doraise=True)
+            nested = [p for p in root.rglob("*.zip") if p.is_file()]
+            if nested:
+                return False, "nested ZIP in SOURCE: " + ", ".join(p.name for p in nested[:3])
+            return True, "PASS"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def audit_repository_sources(selected_module: str) -> None:
+    """Audit all module SOURCE ZIPs that are currently present before building."""
+    failures: list[str] = []
+    for module in find_modules():
+        module_dir = MODULE_ROOT / module
+        sources = [p for p in module_dir.rglob("*.zip") if "source" in p.name.lower() and zipfile.is_zipfile(p)]
+        if not sources:
+            print(f"[SKIP] Repository audit {module}: no SOURCE ZIP present")
+            continue
+        for source in sources:
+            ok, detail = inspect_source_zip_for_rc9(source)
+            print(f"[{'PASS' if ok else 'FAIL'}] Repository audit {module}/{source.name}: {detail}")
+            if not ok:
+                failures.append(f"{module}/{source.name}: {detail}")
+    if failures:
+        raise RuntimeError("Repository SOURCE audit failed: " + " | ".join(failures))
 
 
 def parse_args() -> Options:
@@ -469,50 +644,70 @@ def parse_args() -> Options:
     parser.add_argument("--source-zip", default=env("INPUT_SOURCE_ZIP", ""))
     args = parser.parse_args()
     module = HUB_MODULE if args.build_target in {"service_hub", "Service Hub"} else args.module_name.strip()
-    if not module: raise ValueError("Module name is required when Build Target is Module.")
-    if args.hub_variant not in {"card_launcher", "zip_drop"}: raise ValueError("Invalid Hub Variant.")
-    if actual_python_version() != PYTHON_VERSION: raise RuntimeError(f"RC9 requires Python {PYTHON_VERSION}; active={actual_python_version()}")
+    if not module:
+        raise ValueError("Module name is required when Build Target is Module.")
+    if args.hub_variant not in {"card_launcher", "zip_drop"}:
+        raise ValueError("Invalid Hub Variant.")
+    if actual_python_version() != PYTHON_VERSION:
+        raise RuntimeError(f"RC9 requires Python {PYTHON_VERSION}; active={actual_python_version()}")
     return Options(args.build_target, module, args.hub_variant, as_bool(args.hub_guide), as_bool(args.module_guide), args.source_zip)
 
 
 def main() -> int:
-    opts = parse_args(); modules = find_modules()
-    if opts.module_name not in modules: raise ValueError(f"Unknown module: {opts.module_name}. Detected: {', '.join(modules)}")
+    opts = parse_args()
+    modules = find_modules()
+    audit_repository_sources(opts.module_name)
+    if opts.module_name not in modules:
+        raise ValueError(f"Unknown module: {opts.module_name}. Detected: {', '.join(modules)}")
     source = select_source(MODULE_ROOT / opts.module_name, opts.source_zip)
-    key = cache_key(source, opts); cache_dir = CACHE_ROOT / key
-    shutil.rmtree(OUTPUT_ROOT, ignore_errors=True); OUTPUT_ROOT.mkdir(parents=True)
-    CACHE_ROOT.mkdir(exist_ok=True); prune_cache()
-    print("[INFO] SOURCE:", source); print("[INFO] Cache Key:", key)
-    if restore_cache(cache_dir, key, source, opts): return 0
+    key = cache_key(source, opts)
+    cache_dir = CACHE_ROOT / key
+    shutil.rmtree(OUTPUT_ROOT, ignore_errors=True)
+    OUTPUT_ROOT.mkdir(parents=True)
+    CACHE_ROOT.mkdir(exist_ok=True)
+    prune_cache()
+    print("[INFO] SOURCE:", source)
+    print("[INFO] Cache Key:", key)
+    if restore_cache(cache_dir, key, source, opts):
+        return 0
     with tempfile.TemporaryDirectory(prefix="rc9_") as temp:
-        extract = Path(temp) / "extract"; extract.mkdir(); safe_extract(source, extract)
-        root = unwrap(extract); meta = metadata(root); stage = Path(temp) / "stage"; copy_source(root, stage)
-        apply_options(stage, opts, meta); ensure_rc9_manifest(stage, opts, meta); install_requirements(stage); build(stage, meta)
+        extract = Path(temp) / "extract"
+        extract.mkdir()
+        safe_extract(source, extract)
+        root = unwrap(extract)
+        meta = metadata(root)
+        stage = Path(temp) / "stage"
+        copy_source(root, stage)
+        apply_options(stage, opts, meta)
+        ensure_rc9_manifest(stage, opts, meta)
+        install_requirements(stage)
+        build(stage, meta)
         payload, exe = find_distribution(stage)
         guide = opts.hub_guide if opts.module_name == HUB_MODULE else opts.module_guide
-        artifact = OUTPUT_ROOT / artifact_filename(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
-        candidate_dir = Path(temp) / "candidate"
-        candidate_dir.mkdir()
-        candidate = candidate_dir / artifact.name
-        make_zip(payload, candidate, stage)
-        checks = run_triple_check(stage, payload, exe, candidate, opts, meta)
-        failed = [name for name, ok in checks.items() if not ok]
-        for name, ok in checks.items(): print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        name = artifact_name(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
+        package_dir = OUTPUT_ROOT / name
+        prepare_package(payload, package_dir, stage)
+        checks, smoke_detail = run_triple_check(stage, payload, exe, package_dir, opts, meta)
+        for check_name, ok in checks.items():
+            print(f"[{'PASS' if ok else 'FAIL'}] {check_name}")
+        print("[INFO] EXE startup smoke test:", smoke_detail)
+        failed = [check_name for check_name, ok in checks.items() if ok is not True]
         if failed:
+            shutil.rmtree(package_dir, ignore_errors=True)
             raise RuntimeError("Triple Check failed before Artifact publication: " + ", ".join(failed))
-        shutil.copy2(candidate, artifact)
-        report = artifact.with_suffix(".triple_check.json")
-        write_report(report, checks, key, source, artifact, opts)
-        checks["Cache"] = save_cache(cache_dir, artifact, report)
+        report = package_dir / "triple_check.json"
+        write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
+        checks["Cache"] = save_cache(cache_dir, package_dir, report)
         if not checks["Cache"]:
-            artifact.unlink(missing_ok=True)
-            report.unlink(missing_ok=True)
+            shutil.rmtree(package_dir, ignore_errors=True)
             raise RuntimeError("Triple Check failed: Cache")
-        write_report(report, checks, key, source, artifact, opts)
-        shutil.copy2(report, cache_dir / report.name)
+        write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
+        shutil.copy2(report, cache_dir / "triple_check.json")
+        publish_github_outputs(name, package_dir)
         print("[PASS] Cache")
-        print("[PASS] Artifact:", artifact)
+        print("[PASS] Artifact payload:", package_dir)
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
