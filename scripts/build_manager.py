@@ -73,9 +73,12 @@ def restore_cached_build(signature: str):
  artifacts=ROOT/"artifacts"; artifacts.mkdir(parents=True,exist_ok=True)
  target=artifacts/cached_zip.name; sha_target=artifacts/cached_sha.name
  shutil.copy2(cached_zip,target); shutil.copy2(cached_sha,sha_target)
+ publish_dir=artifacts/target.stem
+ if publish_dir.exists(): shutil.rmtree(publish_dir,ignore_errors=True)
+ with zipfile.ZipFile(target) as z: z.extractall(publish_dir)
  summary=meta.get("summary",{})
- summary.update(status="reused_cache",artifact=str(target),cache_signature=signature,duration_seconds=0)
- gh_output("artifact_name",target.stem); gh_output("artifact_path",str(target))
+ summary.update(status="reused_cache",artifact=str(target),publish_directory=str(publish_dir),cache_signature=signature,duration_seconds=0)
+ gh_output("artifact_name",target.stem); gh_output("artifact_path",str(publish_dir))
  return summary
 
 def save_cached_build(signature: str, target: Path, result: dict):
@@ -89,6 +92,56 @@ def save_cached_build(signature: str, target: Path, result: dict):
   "cache_signature":signature,"artifact_file":target.name,"sha256_file":sha_file.name,
   "created_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"artifact_sha256":result.get("artifact_sha256",""),"summary":result
  })
+
+HUB_TOOL_FOLDERS={
+ "DO_Analysis":"DOanalysis",
+ "Log_explorer":"LogExplorer",
+ "FFT":"FUSImageExplore",
+ "trackerSNR":"TrackerSNR",
+ "VIMeasure":"VIMeasure",
+ "Soni":"SonicationAnalysis",
+}
+
+def _component_context(name,args,reg,workspace_suffix="component"):
+ mc=reg["modules"].get(name,{})
+ module_dir=ROOT/"Module"/name
+ source=latest_source_zip(module_dir,"")
+ ws=ROOT/".build_work"/"hub_components"/name
+ extracted=extract_zip(source,ws/"source")
+ ver,cfg=metadata(extracted)
+ runtime=str(cfg.get("runtime") or ver.get("runtime") or mc.get("runtime") or reg["defaults"]["runtime"])
+ builder=str(cfg.get("builder") or mc.get("builder") or reg["defaults"]["builder"])
+ engine=choose_engine(ver,cfg,builder)
+ entry=str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
+ log=ws/"diagnostics"/"build.log"
+ ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module")
+ return ctx
+
+def assemble_hub_tools(hub_root:Path,args,reg)->list[dict]:
+ """Build the six repository modules with their fixed contracts and place them in Hub/tools.
+
+ This deliberately ignores Hub/integrated_sources. There is no BAT discovery and no fallback.
+ """
+ results=[]
+ tools_root=hub_root/"tools"
+ tools_root.mkdir(parents=True,exist_ok=True)
+ for name in reg["workflow_selection"]["service_hub_modules"]:
+  ctx=_component_context(name,args,reg)
+  started=time.time()
+  payload,exe=BUILDERS[ctx.builder_name](ctx).build()
+  verify_payload(payload,exe,ctx.source_root)
+  smoke_test_exe(exe,ctx.workspace/"diagnostics"/"smoke_test.log",seconds=12)
+  target=tools_root/HUB_TOOL_FOLDERS[name]
+  preserved={}
+  if target.is_dir():
+   for n in ("manifest.json","README.txt","release_notes.md"):
+    q=target/n
+    if q.is_file(): preserved[n]=q.read_bytes()
+  copy_payload(payload,target)
+  for n,data in preserved.items(): (target/n).write_bytes(data)
+  results.append({"module":name,"exe":exe.name,"target":str(target.relative_to(hub_root)),"seconds":round(time.time()-started,2)})
+ write_json(hub_root/"HUB_TOOL_ASSEMBLY.json",{"schema":"insightec.hub.repository-assembly.v1","tools":results})
+ return results
 
 def build_one(name,args,reg):
  started=time.time(); mc=reg["modules"].get(name,{})
@@ -105,6 +158,8 @@ def build_one(name,args,reg):
  artifact = "-".join(x for x in (artifact,mode_tag,guide_tag) if x)
  log=ws/"diagnostics"/"build.log"
  ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,artifact,ver,cfg,args.guide,args.hub_variant)
+ if name == reg["workflow_selection"]["hub_module"]:
+  assemble_hub_tools(extracted,args,reg)
  result={"module":name,"source_zip":source.name,"source_sha256":sha256(source),"runtime":runtime,"builder":builder,"engine":engine,"entry_point_requested":entry,"started":started}
  try:
   payload,exe=BUILDERS[builder](ctx).build()
@@ -119,9 +174,9 @@ def build_one(name,args,reg):
   write_json(release/"manifest.json",manifest)
   target=ROOT/"artifacts"/f"{artifact}-v{vv}.zip"; zip_dir(release,target)
   digest=sha256(target); (target.with_suffix(target.suffix+".sha256")).write_text(f"{digest}  {target.name}\n",encoding="ascii")
-  result.update(status="success",exe=str(exe),payload_check=payload_check,smoke_test=smoke,artifact=str(target),artifact_sha256=digest,cache_signature=args.cache_signature,duration_seconds=round(time.time()-started,2))
+  result.update(status="success",exe=str(exe),payload_check=payload_check,smoke_test=smoke,artifact=str(target),publish_directory=str(release),artifact_sha256=digest,cache_signature=args.cache_signature,duration_seconds=round(time.time()-started,2))
   save_cached_build(args.cache_signature,target,result)
-  gh_output("artifact_name",target.stem); gh_output("artifact_path",str(target)); return result
+  gh_output("artifact_name",target.stem); gh_output("artifact_path",str(release)); return result
  except Exception as e:
   result.update(status="failure",failure_reason=f"{type(e).__name__}: {e}",duration_seconds=round(time.time()-started,2))
   (ws/"diagnostics").mkdir(parents=True,exist_ok=True); (ws/"diagnostics"/"failure.txt").write_text(traceback.format_exc(),encoding="utf-8")

@@ -22,6 +22,9 @@ class HubBuilder(BaseBuilder):
         env = super().build_env()
         env["INSIGHTEC_RUNTIME"] = "RC9"
         env["INSIGHTEC_HUB_VARIANT"] = self.ctx.hub_variant
+        # Hub tools are assembled from repository Module SOURCE ZIPs by build_manager.
+        # Never rebuild stale integrated_sources bundled inside the Hub SOURCE.
+        env["INSIGHTEC_EXTERNAL_TOOL_ASSEMBLY"] = "1"
         return env
 
     def prepare_source(self):
