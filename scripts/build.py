@@ -134,7 +134,8 @@ def actual_python_version() -> str:
 
 
 def cache_key(source: Path, opts: Options) -> str:
-    pieces = [sha256_file(source), sha256_file(Path(__file__)), actual_python_version(), str(opts.hub_guide), str(opts.module_guide), opts.hub_variant]
+    variant_key = opts.hub_variant if opts.module_name == HUB_MODULE else 'module'
+    pieces = [sha256_file(source), sha256_file(Path(__file__)), actual_python_version(), str(opts.hub_guide), str(opts.module_guide), variant_key]
     return hashlib.sha256("|".join(pieces).encode()).hexdigest()
 
 
@@ -144,15 +145,24 @@ def copy_source(root: Path, stage: Path) -> None:
 
 
 def apply_options(stage: Path, opts: Options, meta: dict) -> None:
-    actual = str(meta.get("hub_variant", "")).strip()
-    if opts.module_name == HUB_MODULE:
-        if actual not in {"card_launcher", "zip_drop"}:
-            raise ValueError("Hub version.json must define hub_variant=card_launcher or zip_drop.")
-        if actual != opts.hub_variant:
-            raise ValueError(f"Hub Variant mismatch: SOURCE={actual}, selected={opts.hub_variant}")
+    """Apply workflow options. For Hub builds, workflow input overrides legacy SOURCE metadata."""
+    is_hub = opts.module_name == HUB_MODULE
+    source_variant = str(meta.get("hub_variant", "")).strip()
+    resolved_variant = opts.hub_variant if is_hub else "not_applicable"
+
+    if is_hub:
+        if source_variant not in {"", "card_launcher", "zip_drop"}:
+            print(f"[WARN] Invalid SOURCE hub_variant={source_variant!r}; workflow value will be used.")
+        elif not source_variant:
+            print(f"[INFO] SOURCE has no hub_variant; workflow value applied: {resolved_variant}")
+        elif source_variant != resolved_variant:
+            print(f"[INFO] Hub Variant overridden by workflow: SOURCE={source_variant}, selected={resolved_variant}")
+        meta["hub_variant"] = resolved_variant
+        write_json(stage / "version.json", meta)
+
     options = {
         "schema": "rc9",
-        "hub_variant": actual or opts.hub_variant,
+        "hub_variant": resolved_variant,
         "hub_guide_enabled": opts.hub_guide,
         "module_guide_enabled": opts.module_guide,
         "python_version": actual_python_version(),
@@ -163,11 +173,14 @@ def apply_options(stage: Path, opts: Options, meta: dict) -> None:
         config = load_json(config_path)
         config["hub_guide_enabled"] = opts.hub_guide
         config["module_guide_enabled"] = opts.module_guide
-        config["hub_variant"] = actual or opts.hub_variant
+        if is_hub:
+            config["hub_variant"] = resolved_variant
+        else:
+            config.pop("hub_variant", None)
         config["settings_source"] = "build_options.json"
         write_json(config_path, config)
     os.environ.update({
-        "INSIGHTEC_HUB_VARIANT": actual or opts.hub_variant,
+        "INSIGHTEC_HUB_VARIANT": resolved_variant,
         "INSIGHTEC_HUB_GUIDE": "1" if opts.hub_guide else "0",
         "INSIGHTEC_MODULE_GUIDE": "1" if opts.module_guide else "0",
     })
@@ -410,7 +423,7 @@ def write_report(path: Path, checks: dict[str, bool], key: str, source: Path, ar
     write_json(path, {"schema": "rc9", "result": "PASS" if all(checks.values()) else "FAIL", "cache_key": key,
         "source_sha256": sha256_file(source), "build_py_sha256": sha256_file(Path(__file__)), "artifact": artifact.name,
         "artifact_sha256": sha256_file(artifact) if artifact.is_file() else "", "python_version": actual_python_version(),
-        "hub_variant": opts.hub_variant, "hub_guide_enabled": opts.hub_guide, "module_guide_enabled": opts.module_guide, "checks": checks})
+        "hub_variant": opts.hub_variant if opts.module_name == HUB_MODULE else "not_applicable", "hub_guide_enabled": opts.hub_guide, "module_guide_enabled": opts.module_guide, "checks": checks})
 
 
 def save_cache(cache_dir: Path, artifact: Path, report: Path) -> bool:
@@ -429,7 +442,7 @@ def restore_cache(cache_dir: Path, key: str, source: Path, opts: Options) -> boo
         valid = all([report.get("result") == "PASS", report.get("cache_key") == key,
             report.get("source_sha256") == sha256_file(source), report.get("build_py_sha256") == sha256_file(Path(__file__)),
             report.get("artifact_sha256") == sha256_file(artifact), report.get("python_version") == actual_python_version(),
-            report.get("hub_variant") == opts.hub_variant, report.get("hub_guide_enabled") == opts.hub_guide,
+            report.get("hub_variant") == (opts.hub_variant if opts.module_name == HUB_MODULE else "not_applicable"), report.get("hub_guide_enabled") == opts.hub_guide,
             report.get("module_guide_enabled") == opts.module_guide, safe, no_double, has_exe, has_options,
             all(report.get("checks", {}).values())])
     except Exception as exc:
