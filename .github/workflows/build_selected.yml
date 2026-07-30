@@ -10,10 +10,17 @@ on:
         default: Service Hub
         options: [Service Hub, Module]
       module_name:
-        description: Module folder name (used only for Module build)
-        required: false
-        type: string
+        description: Module (used only for Module build)
+        required: true
+        type: choice
         default: DO_Analysis
+        options:
+          - DO_Analysis
+          - Log_explorer
+          - trackerSNR
+          - FFT
+          - Soni
+          - VIMeasure
       hub_variant:
         description: Hub Variant
         required: true
@@ -66,14 +73,22 @@ jobs:
           restore-keys: |
             rc9-${{ runner.os }}-py314-
       - name: RC9 unified build
+        id: build
         shell: pwsh
         run: python scripts/build.py
       - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: RC9-${{ inputs.build_target }}-${{ inputs.module_name || 'ServiceHub' }}
-          path: |
-            artifacts/*.zip
-            artifacts/*.triple_check.json
+          name: ${{ steps.build.outputs.artifact_name }}
+          path: ${{ steps.build.outputs.artifact_path }}
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 6
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9_Build_Diagnostics_${{ inputs.build_target }}_${{ inputs.module_name }}
+          path: artifacts/BUILD_FAILURE_*
+          if-no-files-found: warn
+          compression-level: 6
