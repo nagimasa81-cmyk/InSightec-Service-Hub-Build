@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "runtimes": {
     "R5": {
       "python": "3.13",
@@ -91,7 +91,7 @@
     "InSightec_Service_hub": {
       "display_name": "InSightec APAC Service Hub",
       "builder": "hub",
-      "runtime": "RC9",
+      "runtime": "R6",
       "entry_point": "InSightecServiceHub.py",
       "icon": "app.ico",
       "artifact_name": "Hub",
