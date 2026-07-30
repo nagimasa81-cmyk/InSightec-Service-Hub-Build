@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.1",
+  "runtimes": {
+    "R5": {
+      "python": "3.13",
+      "builder_family": "rc8",
+      "cache_tag": "r5-py313"
+    },
+    "R6": {
+      "python": "3.13",
+      "builder_family": "rc8",
+      "cache_tag": "r6-py313"
+    },
+    "FFT": {
+      "python": "3.13",
+      "builder_family": "fft",
+      "cache_tag": "fft-py313"
+    },
+    "RC9": {
+      "python": "3.14",
+      "builder_family": "hub",
+      "cache_tag": "rc9-py314"
+    }
+  },
+  "defaults": {
+    "runtime": "R6",
+    "builder": "rc8",
+    "entry_points": [
+      "main.py",
+      "app.py",
+      "launcher.py",
+      "run.py",
+      "start.py"
+    ]
+  },
+  "modules": {
+    "DO_Analysis": {
+      "display_name": "DO Analysis",
+      "builder": "do",
+      "runtime": "R5",
+      "entry_point": "do_analysis_qt_app.py",
+      "icon": "app.ico",
+      "artifact_name": "DO",
+      "build_script": "build_exe.bat"
+    },
+    "Log_explorer": {
+      "display_name": "Log Explorer",
+      "builder": "rc8",
+      "runtime": "R6",
+      "entry_point": "LogMergeTool_NoExcel_Main.py",
+      "icon": "app.ico",
+      "artifact_name": "Log",
+      "build_script": "01_BUILD_EXE_NUITKA.bat"
+    },
+    "FFT": {
+      "display_name": "FUS Image Explore",
+      "builder": "fft",
+      "runtime": "FFT",
+      "entry_point": "launcher.py",
+      "icon": "app.ico",
+      "artifact_name": "FUS",
+      "build_script": "02_BUILD_EXE_NUITKA_CI.bat"
+    },
+    "trackerSNR": {
+      "display_name": "Tracker SNR",
+      "builder": "do",
+      "runtime": "R5",
+      "entry_point": "TrackerSNR_CLEAN_EXE.py",
+      "icon": "app.ico",
+      "artifact_name": "SNR",
+      "build_script": "00_BUILD_EXE_RECOMMENDED_PYINSTALLER.bat"
+    },
+    "VIMeasure": {
+      "display_name": "VIMeasure",
+      "builder": "rc8",
+      "runtime": "R5",
+      "entry_point": "VIMeasureAnalyzer.py",
+      "icon": "app.ico",
+      "artifact_name": "VI",
+      "build_script": "01_BUILD_EXE_NUITKA.bat"
+    },
+    "Soni": {
+      "display_name": "Sonication Analysis",
+      "builder": "rc8",
+      "runtime": "R6",
+      "entry_point": "main.py",
+      "icon": "app.ico",
+      "artifact_name": "Soni",
+      "build_script": "01_BUILD_EXE_NUITKA_CI.bat"
+    },
+    "InSightec_Service_hub": {
+      "display_name": "InSightec APAC Service Hub",
+      "builder": "hub",
+      "runtime": "RC9",
+      "entry_point": "InSightecServiceHub.py",
+      "icon": "app.ico",
+      "artifact_name": "Hub",
+      "build_script": "01_BUILD_EXE.bat"
+    }
+  },
+  "workflow_selection": {
+    "hub_module": "InSightec_Service_hub",
+    "hub_variants": {
+      "zip_drop": "ZIP Drop Service Hub",
+      "card_launcher": "Module Card Launcher"
+    },
+    "guide_modes": {
+      "with_guide": true,
+      "without_guide": false
+    },
+    "default_build_mode": "reuse_existing",
+    "standalone_modules": [
+      "DO_Analysis",
+      "Log_explorer",
+      "FFT",
+      "trackerSNR",
+      "VIMeasure",
+      "Soni"
+    ],
+    "service_hub_modules": [
+      "DO_Analysis",
+      "Log_explorer",
+      "FFT",
+      "trackerSNR",
+      "VIMeasure",
+      "Soni"
+    ],
+    "module_labels": {
+      "DO_Analysis": "DO Analysis",
+      "Log_explorer": "Log Explorer",
+      "FFT": "FUS Image Explore",
+      "trackerSNR": "Tracker SNR",
+      "VIMeasure": "VIMeasure",
+      "Soni": "Sonication Analysis"
+    }
+  }
+}
