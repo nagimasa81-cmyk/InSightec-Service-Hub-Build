@@ -495,25 +495,78 @@ def validate_runtime_payload(payload: Path) -> tuple[bool, list[str]]:
     return not problems, problems
 
 
+def run_build_definition(definition: Path, stage: Path, log_stem: str = "builder") -> None:
+    """Run a build definition with the interpreter appropriate for its file type.
+
+    A BAT/CMD file must never be passed to Python. This dispatcher also makes
+    version.json build_script safe for legacy modules that point at build_exe.bat.
+    """
+    suffix = definition.suffix.lower()
+    relative = str(definition.relative_to(stage))
+    if suffix in {".bat", ".cmd"}:
+        if os.name != "nt":
+            raise RuntimeError(f"Windows batch build definition cannot run on this OS: {relative}")
+        launcher = ["cmd.exe", "/d", "/s", "/c", relative]
+        launcher_name = "CMD"
+    elif suffix == ".py":
+        launcher = [sys.executable, relative]
+        launcher_name = "PYTHON"
+    elif suffix == ".spec":
+        launcher = [sys.executable, "-m", "PyInstaller", "--noconfirm", relative]
+        launcher_name = "PYINSTALLER"
+    elif suffix == ".ps1":
+        if os.name != "nt":
+            raise RuntimeError(f"PowerShell build definition cannot run on this OS: {relative}")
+        launcher = ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", relative]
+        launcher_name = "POWERSHELL"
+    else:
+        raise RuntimeError(
+            f"Unsupported build definition type: {relative}. "
+            "Supported: .bat, .cmd, .py, .spec, .ps1"
+        )
+    print(f"[INFO] Selected build launcher: {launcher_name}")
+    print(f"[INFO] Build definition: {relative}")
+    run(launcher, stage, f"{log_stem}_{launcher_name.lower()}.log")
+
+
 def build(stage: Path, meta: dict) -> None:
+    requested_builder = str(meta.get("build_script", "")).strip()
+    if requested_builder:
+        requested_path = stage / requested_builder
+        if not requested_path.is_file():
+            raise FileNotFoundError(f"version.json build_script missing: {requested_builder}")
+        if requested_path.resolve() == Path(__file__).resolve():
+            raise RuntimeError("version.json build_script points to the RC9 orchestration build.py itself.")
+        if requested_path.suffix.lower() in {".bat", ".cmd"} and is_rc9_wrapper_bat(requested_path):
+            raise RuntimeError(f"version.json build_script points to an RC9 wrapper BAT and would recurse: {requested_builder}")
+        run_build_definition(requested_path, stage, "requested_builder")
+        return
+
     spec = choose_spec(stage, meta)
     if spec:
-        run([sys.executable, "-m", "PyInstaller", "--noconfirm", spec.name], stage, "pyinstaller_spec.log")
+        run_build_definition(spec, stage, "selected_spec")
         return
-    requested_builder = str(meta.get("build_script", "")).strip()
-    builder_candidates = ([stage / requested_builder] if requested_builder else []) + [stage / "Build_Hub_EXE.py", stage / "build.py"]
+
+    builder_candidates = [stage / "Build_Hub_EXE.py", stage / "build.py"]
     builder = next((p for p in builder_candidates if p.is_file() and p.resolve() != Path(__file__).resolve()), None)
     if builder:
-        run([sys.executable, builder.name], stage, "builder_script.log")
+        run_build_definition(builder, stage, "builder_script")
         return
-    bats = [stage / n for n in ("01_BUILD_EXE_NUITKA.bat", "BUILD_EXE_NUITKA.bat", "BUILD_EXE.bat", "build.bat", "01_BUILD_EXE.bat")]
+
+    bats = [stage / n for n in (
+        "01_BUILD_EXE_NUITKA.bat", "BUILD_EXE_NUITKA.bat", "BUILD_EXE.bat",
+        "build_exe.bat", "build.bat", "01_BUILD_EXE.bat"
+    )]
     bat = next((p for p in bats if p.is_file() and not is_rc9_wrapper_bat(p)), None)
-    if bat and os.name == "nt":
-        run(["cmd.exe", "/d", "/c", bat.name], stage, "builder_bat.log")
+    if bat:
+        run_build_definition(bat, stage, "builder_bat")
         return
+
     entry = choose_entry(stage, meta)
     if not entry:
         raise RuntimeError("No unambiguous SPEC, builder, usable BAT, pyproject entry, or Python entry point.")
+    print("[INFO] Selected build launcher: PYINSTALLER")
+    print(f"[INFO] Build entry: {entry.relative_to(stage)}")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed", "--name", entry.stem, str(entry.relative_to(stage))], stage, "pyinstaller_entry.log")
 
 
