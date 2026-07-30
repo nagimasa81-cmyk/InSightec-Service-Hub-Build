@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
-from common.build_common import latest_source_zip,extract_zip,metadata,write_json,sha256,copy_payload,zip_dir,verify_payload,smoke_test_exe
+from common.build_common import latest_source_zip,extract_zip,metadata,write_json,sha256,copy_payload,zip_dir,verify_payload,smoke_test_exe,deploy_qt_runtime
 from builders import BUILDERS
 @dataclass
 class Context:
@@ -129,6 +129,7 @@ def assemble_hub_tools(hub_root:Path,args,reg)->list[dict]:
   ctx=_component_context(name,args,reg)
   started=time.time()
   payload,exe=BUILDERS[ctx.builder_name](ctx).build()
+  qt_deploy=deploy_qt_runtime(payload,exe,ctx.source_root,ctx.workspace/"diagnostics"/"qt_deploy.log")
   verify_payload(payload,exe,ctx.source_root)
   smoke_test_exe(exe,ctx.workspace/"diagnostics"/"smoke_test.log",seconds=12)
   target=tools_root/HUB_TOOL_FOLDERS[name]
@@ -139,7 +140,7 @@ def assemble_hub_tools(hub_root:Path,args,reg)->list[dict]:
     if q.is_file(): preserved[n]=q.read_bytes()
   copy_payload(payload,target)
   for n,data in preserved.items(): (target/n).write_bytes(data)
-  results.append({"module":name,"exe":exe.name,"target":str(target.relative_to(hub_root)),"seconds":round(time.time()-started,2)})
+  results.append({"module":name,"exe":exe.name,"target":str(target.relative_to(hub_root)),"qt_deploy":qt_deploy,"seconds":round(time.time()-started,2)})
  write_json(hub_root/"HUB_TOOL_ASSEMBLY.json",{"schema":"insightec.hub.repository-assembly.v1","tools":results})
  return results
 
@@ -163,6 +164,7 @@ def build_one(name,args,reg):
  result={"module":name,"source_zip":source.name,"source_sha256":sha256(source),"runtime":runtime,"builder":builder,"engine":engine,"entry_point_requested":entry,"started":started}
  try:
   payload,exe=BUILDERS[builder](ctx).build()
+  qt_deploy=deploy_qt_runtime(payload,exe,extracted,ws/"diagnostics"/"qt_deploy.log")
   payload_check=verify_payload(payload,exe,extracted)
   smoke=smoke_test_exe(exe,ws/"diagnostics"/"smoke_test.log",seconds=12)
   release=ROOT/"artifacts"/name
@@ -174,7 +176,7 @@ def build_one(name,args,reg):
   write_json(release/"manifest.json",manifest)
   target=ROOT/"artifacts"/f"{artifact}-v{vv}.zip"; zip_dir(release,target)
   digest=sha256(target); (target.with_suffix(target.suffix+".sha256")).write_text(f"{digest}  {target.name}\n",encoding="ascii")
-  result.update(status="success",exe=str(exe),payload_check=payload_check,smoke_test=smoke,artifact=str(target),publish_directory=str(release),artifact_sha256=digest,cache_signature=args.cache_signature,duration_seconds=round(time.time()-started,2))
+  result.update(status="success",exe=str(exe),qt_deploy=qt_deploy,payload_check=payload_check,smoke_test=smoke,artifact=str(target),publish_directory=str(release),artifact_sha256=digest,cache_signature=args.cache_signature,duration_seconds=round(time.time()-started,2))
   save_cached_build(args.cache_signature,target,result)
   gh_output("artifact_name",target.stem); gh_output("artifact_path",str(release)); return result
  except Exception as e:

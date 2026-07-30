@@ -134,15 +134,110 @@ def locate_payload(root:Path, expected_patterns:list[str]|None=None, output_dire
     if exe.stat().st_size < 100*1024: raise RuntimeError(f"Generated EXE is unexpectedly small: {exe} ({exe.stat().st_size} bytes)")
     return exe.parent,exe
 
+
+
+def _qt_source_detected(source_root: Path) -> bool:
+    for p in source_root.rglob("*.py"):
+        if any(x in p.parts for x in (".venv","venv","site-packages","build","dist","__pycache__")):
+            continue
+        try:
+            text=p.read_text(encoding="utf-8",errors="ignore")[:200000]
+        except Exception:
+            continue
+        if any(token in text for token in ("PySide6","PyQt6","PySide2","PyQt5")):
+            return True
+    return False
+
+def _qt_runtime_paths() -> dict[str, Path]:
+    """Resolve the Qt installation used by the active build Python.
+
+    This is deterministic: only the active interpreter is queried. No search
+    through unrelated Python installations is performed.
+    """
+    code=(
+        "import json\n"
+        "from PySide6.QtCore import QLibraryInfo\n"
+        "print(json.dumps({"
+        "'plugins': QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath),"
+        "'binaries': QLibraryInfo.path(QLibraryInfo.LibraryPath.BinariesPath)"
+        "}))"
+    )
+    try:
+        out=subprocess.check_output([sys.executable,"-c",code],text=True,encoding="utf-8",errors="replace")
+        data=json.loads(out.strip().splitlines()[-1])
+        return {k:Path(v) for k,v in data.items() if v}
+    except Exception:
+        return {}
+
+def deploy_qt_runtime(payload: Path, exe: Path, source_root: Path, log: Path) -> dict:
+    """Ensure a directory-style Qt payload contains its platform plugins.
+
+    First use windeployqt from the active PySide6 installation when available.
+    Then deterministically copy required plugin directories from that same Qt
+    installation. No unrelated Qt/Python installation is searched.
+    """
+    if not _qt_source_detected(source_root):
+        return {"qt_app":False,"status":"not_required"}
+    if not payload.is_dir():
+        return {"qt_app":True,"status":"single_file_or_non_directory"}
+    sibling_files=[p for p in payload.iterdir() if p.is_file()]
+    dlls=list(payload.rglob("*.dll"))
+    directory_bundle=len(sibling_files)>1 or bool(dlls)
+    if not directory_bundle:
+        return {"qt_app":True,"status":"one_file_bundle"}
+    existing=list(payload.rglob("qwindows.dll"))
+    if existing:
+        return {"qt_app":True,"status":"already_present","qwindows":len(existing)}
+
+    paths=_qt_runtime_paths()
+    plugins=paths.get("plugins")
+    binaries=paths.get("binaries")
+    actions=[]
+    deployer=None
+    if binaries:
+        candidate=binaries/("windeployqt.exe" if os.name=="nt" else "windeployqt")
+        if candidate.is_file(): deployer=candidate
+    if deployer is None:
+        found=shutil.which("windeployqt") or shutil.which("windeployqt.exe")
+        if found: deployer=Path(found)
+    if deployer and os.name=="nt":
+        try:
+            run([str(deployer),"--no-translations",str(exe)],payload,log)
+            actions.append(f"windeployqt:{deployer}")
+        except Exception as exc:
+            actions.append(f"windeployqt_failed:{type(exc).__name__}")
+
+    # Copy only known runtime plugin groups from the active PySide6 install.
+    # platforms is mandatory; the others prevent common image/style/TLS startup failures.
+    groups=("platforms","imageformats","styles","iconengines","tls","networkinformation")
+    copied=[]
+    if plugins and plugins.is_dir():
+        for group in groups:
+            src=plugins/group
+            if not src.is_dir():
+                continue
+            dst=payload/group
+            dst.mkdir(parents=True,exist_ok=True)
+            for item in src.iterdir():
+                target=dst/item.name
+                if item.is_dir():
+                    shutil.copytree(item,target,dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item,target)
+            copied.append(group)
+    actions.append("plugins:"+",".join(copied))
+    qwindows=list(payload.rglob("qwindows.dll"))
+    if not qwindows:
+        raise RuntimeError(
+            "Qt runtime repair failed: platforms/qwindows.dll could not be deployed "
+            f"from active Python {sys.version.split()[0]} (plugins={plugins})"
+        )
+    return {"qt_app":True,"status":"repaired","qwindows":len(qwindows),"actions":actions,"plugins_path":str(plugins or "")}
+
 def verify_payload(payload:Path, exe:Path, source_root:Path)->dict:
     if not exe.is_file(): raise FileNotFoundError(f"EXE missing: {exe}")
     if exe.stat().st_size < 100*1024: raise RuntimeError(f"EXE too small: {exe.stat().st_size} bytes")
-    py_text=""
-    for p in source_root.rglob("*.py"):
-        if any(x in p.parts for x in (".venv","venv","site-packages","build","dist","__pycache__")): continue
-        try: py_text += p.read_text(encoding="utf-8",errors="ignore")[:200000]
-        except Exception: pass
-    qt_app=any(token in py_text for token in ("PySide6","PyQt6","PySide2","PyQt5"))
+    qt_app=_qt_source_detected(source_root)
     dlls=list(payload.rglob("*.dll"))
     qwindows=[p for p in payload.rglob("qwindows.dll")]
     # One-file executables legitimately have no side DLLs. For directory payloads, Qt platforms must be present.
