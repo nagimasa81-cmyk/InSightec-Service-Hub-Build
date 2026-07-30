@@ -33,6 +33,16 @@ DEFAULT_MODULE_VERSIONS = {
     "VIMeasure": "7.3",
 }
 
+BUNDLED_MODULES = ["DO_Analysis", "Log_explorer", "trackerSNR", "FFT", "Soni", "VIMeasure"]
+HUB_TOOL_DIRS = {
+    "DO_Analysis": "DOanalysis",
+    "Log_explorer": "LogExplorer",
+    "trackerSNR": "TrackerSNR",
+    "FFT": "FUSImageExplore",
+    "Soni": "Sonication",
+    "VIMeasure": "VIMeasure",
+}
+
 ARTIFACT_NAMES = {
     "InSightec_Service_hub:zip_drop": "ServiceHub",
     "InSightec_Service_hub:card_launcher": "ServiceHubCard",
@@ -189,9 +199,28 @@ def actual_python_version() -> str:
     return f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
-def cache_key(source: Path, opts: Options) -> str:
-    variant_key = opts.hub_variant if opts.module_name == HUB_MODULE else 'module'
-    pieces = [sha256_file(source), sha256_file(Path(__file__)), actual_python_version(), str(opts.hub_guide), str(opts.module_guide), variant_key]
+def cache_key(source: Path, opts: Options, dependency_hashes: dict[str, str] | None = None) -> str:
+    """Build a deterministic cache key shared by Hub and Module builds.
+
+    Module cache varies with its SOURCE, build.py, Python and Module Guide.
+    Hub cache additionally varies with Hub Variant, Hub Guide, Module Guide and
+    the SHA256 of every bundled Module payload.
+    """
+    pieces = [
+        f"source={sha256_file(source)}",
+        f"builder={sha256_file(Path(__file__))}",
+        f"python={actual_python_version()}",
+    ]
+    if opts.module_name == HUB_MODULE:
+        pieces.extend([
+            f"variant={opts.hub_variant}",
+            f"hub_guide={opts.hub_guide}",
+            f"module_guide={opts.module_guide}",
+        ])
+        for module, digest in sorted((dependency_hashes or {}).items()):
+            pieces.append(f"module:{module}={digest}")
+    else:
+        pieces.append(f"module_guide={opts.module_guide}")
     return hashlib.sha256("|".join(pieces).encode()).hexdigest()
 
 
@@ -943,6 +972,161 @@ def audit_repository_sources(opts: Options) -> None:
             print("       -", item)
         raise RuntimeError("Selected SOURCE audit failed: " + " | ".join(blocking_failures))
 
+def module_options(parent: Options, module_name: str) -> Options:
+    return Options(
+        build_target="Module",
+        module_name=module_name,
+        hub_variant=parent.hub_variant,
+        hub_guide=False,
+        module_guide=parent.module_guide,
+        source_zip="",
+    )
+
+
+def integrate_module_packages(hub_stage: Path, packages: dict[str, Path]) -> None:
+    tools_root = hub_stage / "tools"
+    tools_root.mkdir(parents=True, exist_ok=True)
+    inventory: list[dict[str, str]] = []
+    for module_name in BUNDLED_MODULES:
+        package = packages[module_name]
+        destination = tools_root / HUB_TOOL_DIRS[module_name]
+        shutil.rmtree(destination, ignore_errors=True)
+        shutil.copytree(package, destination)
+        manifest = destination / "manifest.json"
+        version_file = destination / "version.json"
+        exe_files = sorted(p.relative_to(destination).as_posix() for p in destination.rglob("*.exe"))
+        if not exe_files:
+            raise RuntimeError(f"Bundled Module has no EXE: {module_name}")
+        inventory.append({
+            "module": module_name,
+            "tool_directory": HUB_TOOL_DIRS[module_name],
+            "payload_sha256": directory_sha256(destination),
+            "manifest": "manifest.json" if manifest.is_file() else "",
+            "version": "version.json" if version_file.is_file() else "",
+            "executables": ";".join(exe_files),
+        })
+        print(f"[PASS] Hub integrated Module: {module_name} -> tools/{HUB_TOOL_DIRS[module_name]}")
+    write_json(hub_stage / "module_bundle_inventory.json", {
+        "schema": "rc9.module-bundle.v1",
+        "module_guide_enabled": load_json(hub_stage / "build_options.json").get("module_guide_enabled", False),
+        "modules": inventory,
+    })
+
+
+def build_one(opts: Options, *, publish: bool, clear_output: bool,
+              dependency_packages: dict[str, Path] | None = None,
+              dependency_hashes: dict[str, str] | None = None) -> Path:
+    modules = find_modules()
+    if opts.module_name not in modules:
+        raise ValueError(f"Unknown module: {opts.module_name}. Detected: {', '.join(modules)}")
+    source = select_source(MODULE_ROOT / opts.module_name, opts.source_zip)
+    key = cache_key(source, opts, dependency_hashes)
+    cache_dir = CACHE_ROOT / key
+    if clear_output:
+        shutil.rmtree(OUTPUT_ROOT, ignore_errors=True)
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    CACHE_ROOT.mkdir(exist_ok=True)
+    prune_cache()
+    print("[INFO] SOURCE:", source)
+    print("[INFO] Cache Key:", key)
+
+    # Internal Module builds restore to a private staging path so they do not
+    # overwrite the final Hub artifact or GitHub step outputs.
+    report_path = cache_dir / "triple_check.json"
+    cached_package = cache_dir / "package"
+    if report_path.is_file() and cached_package.is_dir():
+        try:
+            report = load_json(report_path)
+            safe, no_double, has_exe, has_options, _ = inspect_package(cached_package)
+            valid = all([
+                report.get("result") == "PASS",
+                report.get("cache_key") == key,
+                report.get("source_sha256") == sha256_file(source),
+                report.get("build_py_sha256") == sha256_file(Path(__file__)),
+                report.get("artifact_payload_sha256") == directory_sha256(cached_package),
+                report.get("python_version") == actual_python_version(),
+                report.get("hub_variant") == (opts.hub_variant if opts.module_name == HUB_MODULE else "not_applicable"),
+                report.get("hub_guide_enabled") == opts.hub_guide,
+                report.get("module_guide_enabled") == opts.module_guide,
+                safe, no_double, has_exe, has_options,
+                all(report.get("checks", {}).values()),
+            ])
+        except Exception as exc:
+            print("[WARN] Cache validation failed:", exc)
+            valid = False
+        if valid:
+            name = str(report["artifact"])
+            if publish:
+                output_package = OUTPUT_ROOT / name
+                shutil.rmtree(output_package, ignore_errors=True)
+                shutil.copytree(cached_package, output_package)
+                shutil.copy2(report_path, output_package / "triple_check.json")
+                publish_github_outputs(name, output_package)
+                print("[PASS] Cache restored:", name)
+                return output_package
+            print(f"[PASS] Module cache restored for Hub integration: {opts.module_name}")
+            return cached_package
+
+    with tempfile.TemporaryDirectory(prefix=f"rc9_{opts.module_name}_") as temp:
+        extract = Path(temp) / "extract"
+        extract.mkdir()
+        safe_extract(source, extract)
+        root = unwrap(extract)
+        meta = metadata(root, opts.module_name, source)
+        stage = Path(temp) / "stage"
+        copy_source(root, stage)
+        apply_options(stage, opts, meta)
+        ensure_rc9_manifest(stage, opts, meta)
+        if opts.module_name == HUB_MODULE:
+            if not dependency_packages:
+                raise RuntimeError("Service Hub build requires bundled Module packages.")
+            integrate_module_packages(stage, dependency_packages)
+        install_requirements(stage)
+        try:
+            build(stage, meta)
+        except Exception as exc:
+            report = write_build_failure_report(stage, exc)
+            diagnostic_out = OUTPUT_ROOT / f"BUILD_FAILURE_{opts.module_name}"
+            shutil.rmtree(diagnostic_out, ignore_errors=True)
+            shutil.copytree(report.parent, diagnostic_out)
+            if publish:
+                publish_github_outputs(f"BUILD_FAILURE_{opts.module_name}", diagnostic_out)
+            raise
+        payload, exe = find_distribution(stage)
+        guide = (opts.hub_guide or opts.module_guide) if opts.module_name == HUB_MODULE else opts.module_guide
+        name = artifact_name(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
+        package_dir = OUTPUT_ROOT / name if publish else Path(temp) / "package"
+        prepare_package(payload, package_dir, stage, meta)
+        checks, smoke_detail = run_triple_check(stage, payload, exe, package_dir, opts, meta)
+        if opts.module_name == HUB_MODULE:
+            checks["Bundled Modules"] = bool(dependency_packages) and all(
+                any((package_dir / "tools" / HUB_TOOL_DIRS[m]).rglob("*.exe")) for m in BUNDLED_MODULES
+            )
+        for check_name, ok in checks.items():
+            print(f"[{'PASS' if ok else 'FAIL'}] {check_name}")
+        print("[INFO] EXE startup smoke test:", smoke_detail)
+        failed = [check_name for check_name, ok in checks.items() if ok is not True]
+        if failed:
+            if publish:
+                shutil.rmtree(package_dir, ignore_errors=True)
+            raise RuntimeError("Triple Check failed before Artifact publication: " + ", ".join(failed))
+        report = package_dir / "triple_check.json"
+        write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
+        checks["Cache"] = save_cache(cache_dir, package_dir, report)
+        if not checks["Cache"]:
+            if publish:
+                shutil.rmtree(package_dir, ignore_errors=True)
+            raise RuntimeError("Triple Check failed: Cache")
+        write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
+        shutil.copy2(report, cache_dir / "triple_check.json")
+        if publish:
+            publish_github_outputs(name, package_dir)
+            print("[PASS] Artifact payload:", package_dir)
+            return package_dir
+        print(f"[PASS] Module built and cached for Hub integration: {opts.module_name}")
+        return cache_dir / "package"
+
+
 def parse_args() -> Options:
     parser = argparse.ArgumentParser()
     parser.add_argument("--build-target", default=env("INPUT_BUILD_TARGET", "Service Hub"))
@@ -964,65 +1148,39 @@ def parse_args() -> Options:
 
 def main() -> int:
     opts = parse_args()
-    modules = find_modules()
+    find_modules()
     audit_repository_sources(opts)
-    if opts.module_name not in modules:
-        raise ValueError(f"Unknown module: {opts.module_name}. Detected: {', '.join(modules)}")
-    source = select_source(MODULE_ROOT / opts.module_name, opts.source_zip)
-    key = cache_key(source, opts)
-    cache_dir = CACHE_ROOT / key
     shutil.rmtree(OUTPUT_ROOT, ignore_errors=True)
-    OUTPUT_ROOT.mkdir(parents=True)
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     CACHE_ROOT.mkdir(exist_ok=True)
-    prune_cache()
-    print("[INFO] SOURCE:", source)
-    print("[INFO] Cache Key:", key)
-    if restore_cache(cache_dir, key, source, opts):
+
+    if opts.module_name != HUB_MODULE:
+        build_one(opts, publish=True, clear_output=False)
         return 0
-    with tempfile.TemporaryDirectory(prefix="rc9_") as temp:
-        extract = Path(temp) / "extract"
-        extract.mkdir()
-        safe_extract(source, extract)
-        root = unwrap(extract)
-        meta = metadata(root, opts.module_name, source)
-        stage = Path(temp) / "stage"
-        copy_source(root, stage)
-        apply_options(stage, opts, meta)
-        ensure_rc9_manifest(stage, opts, meta)
-        install_requirements(stage)
+
+    module_packages: dict[str, Path] = {}
+    module_hashes: dict[str, str] = {}
+    print("[INFO] Service Hub build: resolving bundled Modules with common RC9 cache policy.")
+    for module_name in BUNDLED_MODULES:
+        module_dir = MODULE_ROOT / module_name
+        if not module_dir.is_dir():
+            raise RuntimeError(f"Required Module directory missing for Hub build: {module_name}")
         try:
-            build(stage, meta)
+            select_source(module_dir, "")
         except Exception as exc:
-            report = write_build_failure_report(stage, exc)
-            diagnostic_out = OUTPUT_ROOT / f"BUILD_FAILURE_{opts.module_name}"
-            shutil.rmtree(diagnostic_out, ignore_errors=True)
-            shutil.copytree(report.parent, diagnostic_out)
-            publish_github_outputs(f"BUILD_FAILURE_{opts.module_name}", diagnostic_out)
-            raise
-        payload, exe = find_distribution(stage)
-        guide = opts.hub_guide if opts.module_name == HUB_MODULE else opts.module_guide
-        name = artifact_name(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
-        package_dir = OUTPUT_ROOT / name
-        prepare_package(payload, package_dir, stage, meta)
-        checks, smoke_detail = run_triple_check(stage, payload, exe, package_dir, opts, meta)
-        for check_name, ok in checks.items():
-            print(f"[{'PASS' if ok else 'FAIL'}] {check_name}")
-        print("[INFO] EXE startup smoke test:", smoke_detail)
-        failed = [check_name for check_name, ok in checks.items() if ok is not True]
-        if failed:
-            shutil.rmtree(package_dir, ignore_errors=True)
-            raise RuntimeError("Triple Check failed before Artifact publication: " + ", ".join(failed))
-        report = package_dir / "triple_check.json"
-        write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
-        checks["Cache"] = save_cache(cache_dir, package_dir, report)
-        if not checks["Cache"]:
-            shutil.rmtree(package_dir, ignore_errors=True)
-            raise RuntimeError("Triple Check failed: Cache")
-        write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
-        shutil.copy2(report, cache_dir / "triple_check.json")
-        publish_github_outputs(name, package_dir)
-        print("[PASS] Cache")
-        print("[PASS] Artifact payload:", package_dir)
+            raise RuntimeError(f"Required Module SOURCE missing for Hub build: {module_name}: {exc}") from exc
+        package = build_one(module_options(opts, module_name), publish=False, clear_output=False)
+        module_packages[module_name] = package
+        module_hashes[module_name] = directory_sha256(package)
+        print(f"[PASS] Module payload ready: {module_name} sha256={module_hashes[module_name]}")
+
+    build_one(
+        opts,
+        publish=True,
+        clear_output=False,
+        dependency_packages=module_packages,
+        dependency_hashes=module_hashes,
+    )
     return 0
 
 
