@@ -33,8 +33,12 @@ def add(checks: list[Check], name: str, ok: bool, detail: str, warning: bool=Fal
 def exact_matches(root: Path, configured: str) -> list[Path]:
     if not configured:
         return []
-    wanted = Path(configured).name.lower()
-    return [p for p in root.rglob("*") if p.is_file() and p.name.lower() == wanted and not any(x in SKIP_DIRS for x in p.parts)]
+    candidate=(root/configured).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return []
+    return [candidate] if candidate.is_file() else []
 
 
 def validate_json_files(root: Path, checks: list[Check]) -> None:

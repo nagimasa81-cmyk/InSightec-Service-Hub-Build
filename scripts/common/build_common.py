@@ -44,14 +44,22 @@ def metadata(root: Path) -> tuple[dict,dict]:
     version=read_json(versions[0]) if versions else {}
     config=read_json(configs[0]) if configs else {}
     contracts=find_files(root,("insightec_build_contract.json",))
+    if len(contracts) > 1:
+        raise RuntimeError("Multiple insightec_build_contract.json files found; fixed build contract must be unique: " + ", ".join(str(p.relative_to(root)) for p in contracts))
     if contracts:
-        contract=read_json(contracts[0])
+        contract_path=contracts[0]
+        contract=read_json(contract_path)
         build=contract.get("build", {}) if isinstance(contract, dict) else {}
-        config.setdefault("entry_point", contract.get("root_marker", ""))
-        config.setdefault("build_script", build.get("file", ""))
-        config.setdefault("expected_exe_patterns", build.get("expected_exe_patterns", []))
-        config.setdefault("output_directories", build.get("output_directories", []))
-        config["build_contract_path"] = str(contracts[0].relative_to(root)).replace("\\", "/")
+        contract_dir=contract_path.parent
+        def rel_from_root(name: str) -> str:
+            if not name: return ""
+            return str((contract_dir/name).relative_to(root)).replace("\\", "/")
+        config["entry_point"] = rel_from_root(str(contract.get("root_marker", "")))
+        config["build_script"] = rel_from_root(str(build.get("file", "")))
+        config["expected_exe_patterns"] = build.get("expected_exe_patterns", [])
+        config["output_directories"] = [rel_from_root(str(x)) for x in build.get("output_directories", [])]
+        config["build_contract_path"] = str(contract_path.relative_to(root)).replace("\\", "/")
+        config["strict_contract"] = True
     return version, config
 
 def detect_requirements(root: Path) -> list[Path]:
