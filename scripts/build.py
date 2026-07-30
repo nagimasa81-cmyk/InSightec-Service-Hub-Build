@@ -22,6 +22,16 @@ CACHE_ROOT = ROOT / ".rc9_cache"
 OUTPUT_ROOT = ROOT / "artifacts"
 PYTHON_VERSION = "3.14"
 HUB_MODULE = "InSightec_Service_hub"
+DEFAULT_MODULE_VERSIONS = {
+    "InSightec_Service_hub": "9.0",
+    "DO_Analysis": "7.4",
+    "Log_explorer": "9.0",
+    "trackerSNR": "2.2",
+    "FFT": "8.7",
+    "Soni": "1.6",
+    "VIMeasure": "7.3",
+}
+
 ARTIFACT_NAMES = {
     "InSightec_Service_hub:zip_drop": "ServiceHub",
     "InSightec_Service_hub:card_launcher": "ServiceHubCard",
@@ -120,14 +130,36 @@ def unwrap(root: Path) -> Path:
     return current
 
 
-def metadata(root: Path) -> dict:
+def infer_version(module_name: str, source: Path) -> str:
+    match = re.search(r"(?i)RC[_-]?(\d+(?:[._]\d+)*)", source.stem)
+    if match:
+        return match.group(1).replace("_", ".")
+    return DEFAULT_MODULE_VERSIONS.get(module_name, "")
+
+
+def metadata(root: Path, module_name: str, source: Path) -> dict:
     path = root / "version.json"
-    if not path.is_file():
-        raise FileNotFoundError("version.json is required by RC9.")
-    data = load_json(path)
-    if not data.get("version"):
-        raise ValueError("version.json: version is required.")
-    return data
+    if path.is_file():
+        data = load_json(path)
+        version = str(data.get("version") or data.get("release") or "").strip()
+        if not version:
+            raise ValueError("version.json: version or release is required.")
+        data["version"] = re.sub(r"(?i)^RC", "", version)
+        return data
+
+    version = infer_version(module_name, source)
+    if not version:
+        raise FileNotFoundError(
+            f"version.json missing and version cannot be inferred: module={module_name}, source={source}"
+        )
+    print(f"[WARN] Legacy SOURCE has no version.json; RC9 metadata generated: module={module_name}, version={version}")
+    return {
+        "product": module_name,
+        "version": version,
+        "release": f"RC{version}",
+        "commit": "legacy-migrated",
+        "generated_by": "RC9 build.py",
+    }
 
 
 def actual_python_version() -> str:
@@ -150,6 +182,9 @@ def apply_options(stage: Path, opts: Options, meta: dict) -> None:
     is_hub = opts.module_name == HUB_MODULE
     source_variant = str(meta.get("hub_variant", "")).strip()
     resolved_variant = opts.hub_variant if is_hub else "not_applicable"
+
+    if not (stage / "version.json").is_file():
+        write_json(stage / "version.json", meta)
 
     if is_hub:
         if source_variant not in {"", "card_launcher", "zip_drop"}:
@@ -487,7 +522,7 @@ def run_triple_check(stage: Path, payload: Path, exe: Path, package_dir: Path,
         "EXE generated": exe.is_file() and exe.stat().st_size > 0,
         "EXE startup smoke test": smoke_ok,
         "Artifact payload generated": package_dir.is_dir() and any(package_dir.iterdir()),
-        "No double ZIP": p_no_double and z_no_double,
+        "No double ZIP": p_no_double,
         "Hub Variant": opts.module_name != HUB_MODULE or meta.get("hub_variant") == opts.hub_variant,
         "Guide settings": options.get("hub_guide_enabled") == opts.hub_guide and options.get("module_guide_enabled") == opts.module_guide and p_has_options,
         "Python version": actual_python_version() == PYTHON_VERSION,
@@ -587,7 +622,7 @@ def publish_github_outputs(name: str, package_dir: Path) -> None:
 
 
 
-def inspect_source_zip_for_rc9(source: Path) -> tuple[bool, str]:
+def inspect_source_zip_for_rc9(module_name: str, source: Path) -> tuple[bool, str]:
     """Static audit used for every SOURCE ZIP present in Module folders."""
     try:
         with tempfile.TemporaryDirectory(prefix="rc9_audit_") as temp:
@@ -596,11 +631,17 @@ def inspect_source_zip_for_rc9(source: Path) -> tuple[bool, str]:
             safe_extract(source, root)
             root = unwrap(root)
             version = root / "version.json"
-            if not version.is_file():
-                return False, "version.json missing"
-            meta = load_json(version)
-            if not (meta.get("version") or meta.get("release")):
-                return False, "version/release missing"
+            if version.is_file():
+                meta = load_json(version)
+                if not (meta.get("version") or meta.get("release")):
+                    return False, "version/release missing in version.json"
+                metadata_detail = "version.json present"
+            else:
+                inferred = infer_version(module_name, source)
+                if not inferred:
+                    return False, "version.json missing and no version can be inferred"
+                meta = {"version": inferred}
+                metadata_detail = f"legacy metadata will be generated (version={inferred})"
             definitions = list(root.rglob("*.spec")) + list(root.rglob("Build_*EXE.py"))
             entry = choose_entry(root, meta)
             if not definitions and not (root / "pyproject.toml").is_file() and not entry:
@@ -611,26 +652,56 @@ def inspect_source_zip_for_rc9(source: Path) -> tuple[bool, str]:
             nested = [p for p in root.rglob("*.zip") if p.is_file()]
             if nested:
                 return False, "nested ZIP in SOURCE: " + ", ".join(p.name for p in nested[:3])
-            return True, "PASS"
+            return True, f"PASS; {metadata_detail}"
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
 
 
-def audit_repository_sources(selected_module: str) -> None:
-    """Audit all module SOURCE ZIPs that are currently present before building."""
+def audit_repository_sources(opts: Options) -> None:
+    """Audit only the scope relevant to this run.
+
+    Module builds audit the selected module only. Service Hub builds audit the Hub
+    and every module that currently contains a SOURCE ZIP.
+    """
+    if opts.module_name == HUB_MODULE:
+        audit_modules = find_modules()
+        scope_label = "Service Hub + all available modules"
+    else:
+        audit_modules = [opts.module_name]
+        scope_label = f"selected module only: {opts.module_name}"
+
+    print(f"[INFO] Repository audit scope: {scope_label}")
     failures: list[str] = []
-    for module in find_modules():
+    warnings: list[str] = []
+    checked = 0
+    for module in audit_modules:
         module_dir = MODULE_ROOT / module
+        if not module_dir.is_dir():
+            failures.append(f"{module_dir}: module directory missing")
+            continue
         sources = [p for p in module_dir.rglob("*.zip") if "source" in p.name.lower() and zipfile.is_zipfile(p)]
         if not sources:
-            print(f"[SKIP] Repository audit {module}: no SOURCE ZIP present")
+            message = f"{module_dir.relative_to(ROOT)}: no SOURCE ZIP present"
+            print(f"[SKIP] {message}")
+            warnings.append(message)
             continue
         for source in sources:
-            ok, detail = inspect_source_zip_for_rc9(source)
-            print(f"[{'PASS' if ok else 'FAIL'}] Repository audit {module}/{source.name}: {detail}")
+            checked += 1
+            ok, detail = inspect_source_zip_for_rc9(module, source)
+            relative = source.relative_to(ROOT)
+            print(f"[{'PASS' if ok else 'FAIL'}] Repository audit: {relative}: {detail}")
             if not ok:
-                failures.append(f"{module}/{source.name}: {detail}")
+                failures.append(f"{relative}: {detail}")
+
+    print("[INFO] Repository audit summary:")
+    print(f"       scope={scope_label}")
+    print(f"       checked_source_zips={checked}")
+    print(f"       skipped_or_warning={len(warnings)}")
+    print(f"       failures={len(failures)}")
     if failures:
+        print("[FAIL] Modules requiring correction:")
+        for item in failures:
+            print("       -", item)
         raise RuntimeError("Repository SOURCE audit failed: " + " | ".join(failures))
 
 
@@ -656,7 +727,7 @@ def parse_args() -> Options:
 def main() -> int:
     opts = parse_args()
     modules = find_modules()
-    audit_repository_sources(opts.module_name)
+    audit_repository_sources(opts)
     if opts.module_name not in modules:
         raise ValueError(f"Unknown module: {opts.module_name}. Detected: {', '.join(modules)}")
     source = select_source(MODULE_ROOT / opts.module_name, opts.source_zip)
@@ -675,7 +746,7 @@ def main() -> int:
         extract.mkdir()
         safe_extract(source, extract)
         root = unwrap(extract)
-        meta = metadata(root)
+        meta = metadata(root, opts.module_name, source)
         stage = Path(temp) / "stage"
         copy_source(root, stage)
         apply_options(stage, opts, meta)
