@@ -3,6 +3,9 @@ import argparse, json, re, sys, tempfile, zipfile
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common.build_common import latest_source_zip
+
 ROOT=Path(__file__).resolve().parents[1]
 REG=json.loads((ROOT/'config/module_registry.json').read_text(encoding='utf-8-sig'))
 SKIP={'build','dist','release','.venv','venv','.venv_nuitka','__pycache__'}
@@ -12,15 +15,8 @@ class Result:
     module:str; status:str; source_zip:str; contract:str=''; build_script:str=''; entry_point:str=''; runtime:str=''; python:str=''; details:list[str]|None=None
 
 def source_zip_for(module:str)->Path:
-    cfg=REG['modules'][module]
-    exact=str(cfg.get('source_zip','')).strip()
     module_dir=ROOT/'Module'/module
-    if not exact:
-        raise FileNotFoundError(f'Registry source_zip is not fixed for {module}')
-    p=module_dir/exact
-    if not p.is_file():
-        raise FileNotFoundError(f'Fixed SOURCE ZIP missing: {p}')
-    return p
+    return latest_source_zip(module_dir)
 
 def unwrap(root:Path)->Path:
     visible=[p for p in root.iterdir() if p.name not in {'__MACOSX'}]

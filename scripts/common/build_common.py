@@ -17,22 +17,27 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 def latest_source_zip(module_dir: Path, exact: str="") -> Path:
-    if not exact:
-        try:
-            root=Path(__file__).resolve().parents[2]
-            reg=read_json(root/"config"/"module_registry.json")
-            cfg=reg.get("modules",{}).get(module_dir.name,{})
-            exact=str(cfg.get("source_zip","")).strip()
-        except Exception:
-            exact=""
+    """Return the one authoritative SOURCE ZIP for a module.
+
+    No newest-file selection, no Registry filename fallback, and no automatic
+    substitution are allowed. An explicit name may be supplied by an internal
+    caller, otherwise the module directory must contain exactly one SOURCE ZIP.
+    """
     if exact:
         p=module_dir/exact
-        if not p.is_file(): raise FileNotFoundError(f"SOURCE ZIP not found: {p}")
+        if not p.is_file():
+            raise FileNotFoundError(f"Exact SOURCE ZIP not found: {p}")
         return p
-    zips=[p for p in module_dir.glob("*.zip") if "SOURCE" in p.name.upper()]
-    if not zips: zips=list(module_dir.glob("*.zip"))
-    if not zips: raise FileNotFoundError(f"No SOURCE ZIP in {module_dir}")
-    return max(zips, key=lambda p:(p.stat().st_mtime_ns,p.name.lower()))
+    source_zips=sorted(
+        [p for p in module_dir.glob("*.zip") if "SOURCE" in p.name.upper()],
+        key=lambda p:p.name.lower(),
+    )
+    if len(source_zips)!=1:
+        names=", ".join(p.name for p in source_zips) or "none"
+        raise RuntimeError(
+            f"Expected exactly one SOURCE ZIP in {module_dir}; found {len(source_zips)}: {names}"
+        )
+    return source_zips[0]
 
 def extract_zip(source: Path, destination: Path) -> Path:
     if destination.exists(): shutil.rmtree(destination, ignore_errors=True)
