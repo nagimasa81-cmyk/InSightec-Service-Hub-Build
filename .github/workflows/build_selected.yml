@@ -179,6 +179,10 @@ jobs:
             Module/${{ needs.resolve.outputs.module_name }}/**/*.zip
             config/module_registry.json
 
+      - name: Audit all fixed module contracts
+        shell: pwsh
+        run: python scripts/contract_audit.py --all --report artifacts/contract_audit.json
+
       - name: Restore completed Artifact Cache
         id: artifact_cache
         if: inputs.build_mode == 'reuse_existing'
@@ -280,4 +284,5 @@ jobs:
             .build_work/${{ needs.resolve.outputs.module_name }}/diagnostics
             artifacts/build_summary.json
             artifacts/preflight_*.json
+            artifacts/contract_audit.json
           if-no-files-found: warn
