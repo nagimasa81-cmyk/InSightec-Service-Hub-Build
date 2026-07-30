@@ -1,0 +1,43 @@
+name: Build All - Framework Core
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.modules.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: modules
+        shell: python
+        run: |
+          import json, pathlib, os
+          r=json.load(open('config/module_registry.json',encoding='utf-8'))
+          items=[]
+          selected=[r['workflow_selection']['hub_module'], *r['workflow_selection']['service_hub_modules']]
+          for module_name in selected:
+              p=pathlib.Path('Module') / module_name
+              if not p.is_dir() or not list(p.glob('*.zip')):
+                  raise SystemExit(f'Missing SOURCE ZIP for configured module: {module_name}')
+              m=r['modules'][module_name]
+              runtime=m.get('runtime',r['defaults']['runtime'])
+              items.append({'module':module_name,'python':r['runtimes'][runtime]['python'],'runtime':runtime})
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('matrix='+json.dumps({'include':items},separators=(',',':'))+'\n')
+  build:
+    needs: discover
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    uses: ./.github/workflows/build_selected_reusable.yml
+    with:
+      module_name: ${{ matrix.module }}
+      python_version: ${{ matrix.python }}
+  summary:
+    if: always()
+    needs: [discover, build]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Build-all completed with failure isolation. Check each matrix job and artifact."
