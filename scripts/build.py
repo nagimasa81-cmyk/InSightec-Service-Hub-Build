@@ -498,19 +498,64 @@ def artifact_name(module: str, variant: str, version: str, guide: bool) -> str:
     return f"{base}_RC{clean}{'G' if guide else ''}"
 
 
-def prepare_package(payload: Path, package_dir: Path, stage: Path) -> None:
+def classify_payload_zip(relative: Path, meta: dict | None = None) -> tuple[bool, str]:
+    """Classify ZIP files embedded in a built payload.
+
+    GitHub upload-artifact always creates the outer download ZIP. RC9 therefore
+    forbids product/distribution ZIP wrappers inside the uploaded directory, but
+    permits runtime ZIPs that are required by frozen Python applications, such as
+    PyInstaller's _internal/base_library.zip. Additional intentional ZIP resources
+    can be explicitly whitelisted with version.json -> allowed_payload_zips.
+    """
+    normalized = relative.as_posix().lstrip("./")
+    lower_name = relative.name.lower()
+    lower_parts = {part.lower() for part in relative.parts}
+    if lower_name == "base_library.zip" and ("_internal" in lower_parts or len(relative.parts) == 1):
+        return True, "PyInstaller runtime library"
+    if lower_name.startswith("python") and lower_name.endswith(".zip") and "_internal" in lower_parts:
+        return True, "Frozen Python runtime library"
+    allowed = []
+    if isinstance(meta, dict):
+        value = meta.get("allowed_payload_zips", [])
+        if isinstance(value, list):
+            allowed = [str(item).replace("\\", "/").lstrip("./") for item in value]
+    if normalized in allowed:
+        return True, "Explicitly allowed by version.json"
+    return False, "Distribution/resource ZIP is not allowed in the Artifact payload"
+
+
+def payload_zip_inventory(root: Path, meta: dict | None = None) -> list[dict[str, object]]:
+    inventory: list[dict[str, object]] = []
+    if not root.is_dir():
+        return inventory
+    for path in sorted(root.rglob("*.zip")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        allowed, reason = classify_payload_zip(relative, meta)
+        inventory.append({"path": relative.as_posix(), "allowed": allowed, "reason": reason})
+    return inventory
+
+
+def prepare_package(payload: Path, package_dir: Path, stage: Path, meta: dict) -> None:
     """Create the directory uploaded by actions/upload-artifact.
 
     Do not create a distributable ZIP here. upload-artifact produces the one and only
-    downloaded ZIP. This prevents GitHub artifact ZIP -> product ZIP nesting.
+    downloaded ZIP. This prevents GitHub Artifact ZIP -> product/distribution ZIP nesting while preserving required runtime ZIPs.
     """
     shutil.rmtree(package_dir, ignore_errors=True)
     package_dir.mkdir(parents=True, exist_ok=True)
+    inventory = payload_zip_inventory(payload, meta)
+    forbidden = [item for item in inventory if not item["allowed"]]
+    for item in inventory:
+        status = "ALLOW" if item["allowed"] else "FORBID"
+        print(f"[{status}] Payload ZIP: {item['path']} ({item['reason']})")
+    if forbidden:
+        details = " | ".join(f"{item['path']}: {item['reason']}" for item in forbidden)
+        raise RuntimeError("Forbidden ZIP detected in build payload: " + details)
     for path in sorted(payload.rglob("*")):
         if not path.is_file():
             continue
-        if path.suffix.lower() == ".zip":
-            raise RuntimeError(f"Nested ZIP detected in build payload: {path.relative_to(payload)}")
         relative = path.relative_to(payload)
         target = package_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -520,6 +565,12 @@ def prepare_package(payload: Path, package_dir: Path, stage: Path) -> None:
         target = package_dir / name
         if source.is_file() and not target.exists():
             shutil.copy2(source, target)
+    write_json(package_dir / "payload_zip_inventory.json", {
+        "schema": "rc9.payload_zip_inventory.v1",
+        "outer_archive_created_by": "actions/upload-artifact",
+        "entries": inventory,
+        "forbidden_count": len(forbidden),
+    })
 
 
 def make_verification_zip(package_dir: Path, output: Path) -> None:
@@ -564,7 +615,14 @@ def inspect_package(package_dir: Path, opts: Options | None = None, meta: dict |
         return False, False, False, False, False
     files = [p for p in package_dir.rglob("*") if p.is_file()]
     safe = bool(files) and all(package_dir.resolve() in p.resolve().parents for p in files)
-    no_double = not any(p.suffix.lower() == ".zip" for p in files)
+    effective_meta = meta
+    if effective_meta is None and (package_dir / "version.json").is_file():
+        try:
+            effective_meta = load_json(package_dir / "version.json")
+        except Exception:
+            effective_meta = None
+    zip_inventory = payload_zip_inventory(package_dir, effective_meta)
+    no_double = all(bool(item["allowed"]) for item in zip_inventory)
     has_exe = any(p.suffix.lower() == ".exe" for p in files)
     has_options = (package_dir / "build_options.json").is_file()
     manifest_name = "hub_manifest.json" if opts and opts.module_name == HUB_MODULE else "manifest.json"
@@ -584,7 +642,8 @@ def inspect_verification_zip(archive_path: Path, opts: Options, meta: dict) -> t
     with zipfile.ZipFile(archive_path) as archive:
         names = [n for n in archive.namelist() if not n.endswith("/")]
         safe = bool(names) and all(n and not n.startswith(("/", "\\")) and ".." not in Path(n).parts for n in names)
-        no_double = not any(n.lower().endswith(".zip") for n in names)
+        zip_names = [Path(n) for n in names if n.lower().endswith(".zip")]
+        no_double = all(classify_payload_zip(name, meta)[0] for name in zip_names)
         has_exe = any(n.lower().endswith(".exe") for n in names)
         has_options = "build_options.json" in names
         manifest_name = "hub_manifest.json" if opts.module_name == HUB_MODULE else "manifest.json"
@@ -648,7 +707,7 @@ def run_triple_check(stage: Path, payload: Path, exe: Path, package_dir: Path,
         "Runtime dependency payload": runtime_ok,
         "EXE startup smoke test": smoke_ok,
         "Artifact payload generated": package_dir.is_dir() and any(package_dir.iterdir()),
-        "No double ZIP": p_no_double,
+        "No distribution ZIP wrapper": p_no_double,
         "Hub Variant": opts.module_name != HUB_MODULE or meta.get("hub_variant") == opts.hub_variant,
         "Guide settings": options.get("hub_guide_enabled") == opts.hub_guide and options.get("module_guide_enabled") == opts.module_guide and p_has_options,
         "Python version": actual_python_version() == PYTHON_VERSION,
@@ -891,7 +950,7 @@ def main() -> int:
         guide = opts.hub_guide if opts.module_name == HUB_MODULE else opts.module_guide
         name = artifact_name(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
         package_dir = OUTPUT_ROOT / name
-        prepare_package(payload, package_dir, stage)
+        prepare_package(payload, package_dir, stage, meta)
         checks, smoke_detail = run_triple_check(stage, payload, exe, package_dir, opts, meta)
         for check_name, ok in checks.items():
             print(f"[{'PASS' if ok else 'FAIL'}] {check_name}")
