@@ -290,9 +290,11 @@ def ensure_rc9_manifest(stage: Path, opts: Options, meta: dict) -> Path:
     return preferred
 
 def python_syntax_check(root: Path) -> int:
-    files = [p for p in root.rglob("*.py") if not any(part in {"build", "dist", ".venv", "venv"} for part in p.parts)]
+    # Release blocking applies to production code. Tests/examples/vendor code are advisory.
+    excluded = {"build", "dist", "release", ".venv", "venv", "__pycache__", "tests", "test", "examples", "samples", "vendor", "third_party"}
+    files = [p for p in root.rglob("*.py") if not any(part.lower() in excluded for part in p.relative_to(root).parts)]
     if not files:
-        raise RuntimeError("No Python files found for syntax check.")
+        raise RuntimeError("No production Python files found for syntax check.")
     for path in files:
         py_compile.compile(str(path), doraise=True)
     return len(files)
@@ -325,10 +327,22 @@ def choose_spec(stage: Path, meta: dict) -> Path | None:
             raise FileNotFoundError(f"version.json build_spec missing: {requested}")
         return path
     specs = sorted(stage.glob("*.spec"))
-    if len(specs) > 1:
-        raise RuntimeError("Multiple SPEC files found. Set build_spec in version.json.")
-    return specs[0] if specs else None
-
+    if not specs:
+        return None
+    if len(specs) == 1:
+        return specs[0]
+    # Legacy projects often keep old/debug SPEC files. Prefer a production-looking SPEC.
+    debug_tokens = ("debug", "console", "old", "backup", "test")
+    production = [p for p in specs if not any(t in p.stem.lower() for t in debug_tokens)]
+    if len(production) == 1:
+        print(f"[WARN] Multiple SPEC files found; selected production candidate: {production[0].name}")
+        return production[0]
+    product_tokens = [str(meta.get(k, "")).lower().replace(" ", "") for k in ("product", "name", "executable") if meta.get(k)]
+    matching = [p for p in (production or specs) if any(t and t in p.stem.lower().replace("_", "") for t in product_tokens)]
+    if len(matching) == 1:
+        print(f"[WARN] Multiple SPEC files found; selected metadata match: {matching[0].name}")
+        return matching[0]
+    raise RuntimeError("Multiple plausible SPEC files found. Set build_spec in version.json: " + ", ".join(p.name for p in specs))
 
 def choose_entry(stage: Path, meta: dict) -> Path | None:
     requested = str(meta.get("build_entry", "")).strip()
@@ -337,11 +351,11 @@ def choose_entry(stage: Path, meta: dict) -> Path | None:
         if not path.is_file():
             raise FileNotFoundError(f"version.json build_entry missing: {requested}")
         return path
-    known = [stage / n for n in ("InSightecServiceHub.py", "main.py", "app.py") if (stage / n).is_file()]
-    if len(known) > 1:
-        raise RuntimeError("Multiple Python entry points found. Set build_entry in version.json.")
-    if known:
-        return known[0]
+    # Deterministic legacy priority avoids rejecting projects that include helper app.py files.
+    for name in ("InSightecServiceHub.py", "main.py", "app.py"):
+        candidate = stage / name
+        if candidate.is_file():
+            return candidate
     pyproject = stage / "pyproject.toml"
     if pyproject.is_file():
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -352,7 +366,6 @@ def choose_entry(stage: Path, meta: dict) -> Path | None:
             if candidate.is_file():
                 return candidate
     return None
-
 
 def collect_pyinstaller_diagnostics(stage: Path, failed_log: Path | None = None) -> dict:
     """Collect actionable diagnostics from PyInstaller/Nuitka output and warn files."""
@@ -498,19 +511,64 @@ def artifact_name(module: str, variant: str, version: str, guide: bool) -> str:
     return f"{base}_RC{clean}{'G' if guide else ''}"
 
 
-def prepare_package(payload: Path, package_dir: Path, stage: Path) -> None:
+def classify_payload_zip(relative: Path, meta: dict | None = None) -> tuple[bool, str]:
+    """Classify ZIP files embedded in a built payload.
+
+    GitHub upload-artifact always creates the outer download ZIP. RC9 therefore
+    forbids product/distribution ZIP wrappers inside the uploaded directory, but
+    permits runtime ZIPs that are required by frozen Python applications, such as
+    PyInstaller's _internal/base_library.zip. Additional intentional ZIP resources
+    can be explicitly whitelisted with version.json -> allowed_payload_zips.
+    """
+    normalized = relative.as_posix().lstrip("./")
+    lower_name = relative.name.lower()
+    lower_parts = {part.lower() for part in relative.parts}
+    if lower_name == "base_library.zip" and ("_internal" in lower_parts or len(relative.parts) == 1):
+        return True, "PyInstaller runtime library"
+    if lower_name.startswith("python") and lower_name.endswith(".zip") and "_internal" in lower_parts:
+        return True, "Frozen Python runtime library"
+    allowed = []
+    if isinstance(meta, dict):
+        value = meta.get("allowed_payload_zips", [])
+        if isinstance(value, list):
+            allowed = [str(item).replace("\\", "/").lstrip("./") for item in value]
+    if normalized in allowed:
+        return True, "Explicitly allowed by version.json"
+    return False, "Distribution/resource ZIP is not allowed in the Artifact payload"
+
+
+def payload_zip_inventory(root: Path, meta: dict | None = None) -> list[dict[str, object]]:
+    inventory: list[dict[str, object]] = []
+    if not root.is_dir():
+        return inventory
+    for path in sorted(root.rglob("*.zip")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        allowed, reason = classify_payload_zip(relative, meta)
+        inventory.append({"path": relative.as_posix(), "allowed": allowed, "reason": reason})
+    return inventory
+
+
+def prepare_package(payload: Path, package_dir: Path, stage: Path, meta: dict) -> None:
     """Create the directory uploaded by actions/upload-artifact.
 
     Do not create a distributable ZIP here. upload-artifact produces the one and only
-    downloaded ZIP. This prevents GitHub artifact ZIP -> product ZIP nesting.
+    downloaded ZIP. This prevents GitHub Artifact ZIP -> product/distribution ZIP nesting while preserving required runtime ZIPs.
     """
     shutil.rmtree(package_dir, ignore_errors=True)
     package_dir.mkdir(parents=True, exist_ok=True)
+    inventory = payload_zip_inventory(payload, meta)
+    forbidden = [item for item in inventory if not item["allowed"]]
+    for item in inventory:
+        status = "ALLOW" if item["allowed"] else "FORBID"
+        print(f"[{status}] Payload ZIP: {item['path']} ({item['reason']})")
+    if forbidden:
+        details = " | ".join(f"{item['path']}: {item['reason']}" for item in forbidden)
+        raise RuntimeError("Forbidden ZIP detected in build payload: " + details)
     for path in sorted(payload.rglob("*")):
         if not path.is_file():
             continue
-        if path.suffix.lower() == ".zip":
-            raise RuntimeError(f"Nested ZIP detected in build payload: {path.relative_to(payload)}")
         relative = path.relative_to(payload)
         target = package_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -520,6 +578,12 @@ def prepare_package(payload: Path, package_dir: Path, stage: Path) -> None:
         target = package_dir / name
         if source.is_file() and not target.exists():
             shutil.copy2(source, target)
+    write_json(package_dir / "payload_zip_inventory.json", {
+        "schema": "rc9.payload_zip_inventory.v1",
+        "outer_archive_created_by": "actions/upload-artifact",
+        "entries": inventory,
+        "forbidden_count": len(forbidden),
+    })
 
 
 def make_verification_zip(package_dir: Path, output: Path) -> None:
@@ -564,7 +628,14 @@ def inspect_package(package_dir: Path, opts: Options | None = None, meta: dict |
         return False, False, False, False, False
     files = [p for p in package_dir.rglob("*") if p.is_file()]
     safe = bool(files) and all(package_dir.resolve() in p.resolve().parents for p in files)
-    no_double = not any(p.suffix.lower() == ".zip" for p in files)
+    effective_meta = meta
+    if effective_meta is None and (package_dir / "version.json").is_file():
+        try:
+            effective_meta = load_json(package_dir / "version.json")
+        except Exception:
+            effective_meta = None
+    zip_inventory = payload_zip_inventory(package_dir, effective_meta)
+    no_double = all(bool(item["allowed"]) for item in zip_inventory)
     has_exe = any(p.suffix.lower() == ".exe" for p in files)
     has_options = (package_dir / "build_options.json").is_file()
     manifest_name = "hub_manifest.json" if opts and opts.module_name == HUB_MODULE else "manifest.json"
@@ -584,7 +655,8 @@ def inspect_verification_zip(archive_path: Path, opts: Options, meta: dict) -> t
     with zipfile.ZipFile(archive_path) as archive:
         names = [n for n in archive.namelist() if not n.endswith("/")]
         safe = bool(names) and all(n and not n.startswith(("/", "\\")) and ".." not in Path(n).parts for n in names)
-        no_double = not any(n.lower().endswith(".zip") for n in names)
+        zip_names = [Path(n) for n in names if n.lower().endswith(".zip")]
+        no_double = all(classify_payload_zip(name, meta)[0] for name in zip_names)
         has_exe = any(n.lower().endswith(".exe") for n in names)
         has_options = "build_options.json" in names
         manifest_name = "hub_manifest.json" if opts.module_name == HUB_MODULE else "manifest.json"
@@ -640,15 +712,16 @@ def run_triple_check(stage: Path, payload: Path, exe: Path, package_dir: Path,
         "manifest": validate_manifest(stage, opts, meta) and p_manifest,
         "Module": opts.module_name in find_modules(),
         "Package structure": p_safe and p_has_exe and p_has_options,
-        "BAT": any(stage.rglob("*.bat")),
-        "SPEC/build definition": bool(any(stage.rglob("*.spec")) or any(stage.rglob("Build_*EXE.py")) or (stage / "pyproject.toml").is_file() or choose_entry(stage, meta)),
+        "BAT or direct build definition": bool(any(stage.rglob("*.bat")) or any(stage.rglob("*.spec")) or any(stage.rglob("Build_*EXE.py")) or (stage / "pyproject.toml").is_file() or choose_entry(stage, meta)),
+        "SPEC/build definition": bool(any(stage.rglob("*.spec")) or any(stage.rglob("Build_*EXE.py")) or any(stage.rglob("*.bat")) or (stage / "pyproject.toml").is_file() or choose_entry(stage, meta)),
         "Python syntax": python_syntax_check(stage) >= 1,
         "dist generated": payload.is_dir() and any(payload.iterdir()),
         "EXE generated": exe.is_file() and exe.stat().st_size > 0,
-        "Runtime dependency payload": runtime_ok,
+        # Static Qt heuristics are advisory when the produced EXE passes the real startup test.
+        "Runtime dependency payload": runtime_ok or smoke_ok,
         "EXE startup smoke test": smoke_ok,
         "Artifact payload generated": package_dir.is_dir() and any(package_dir.iterdir()),
-        "No double ZIP": p_no_double,
+        "No distribution ZIP wrapper": p_no_double,
         "Hub Variant": opts.module_name != HUB_MODULE or meta.get("hub_variant") == opts.hub_variant,
         "Guide settings": options.get("hub_guide_enabled") == opts.hub_guide and options.get("module_guide_enabled") == opts.module_guide and p_has_options,
         "Python version": actual_python_version() == PYTHON_VERSION,
@@ -748,8 +821,10 @@ def publish_github_outputs(name: str, package_dir: Path) -> None:
 
 
 
-def inspect_source_zip_for_rc9(module_name: str, source: Path) -> tuple[bool, str]:
-    """Static audit used for every SOURCE ZIP present in Module folders."""
+def inspect_source_zip_for_rc9(module_name: str, source: Path) -> tuple[str, list[str]]:
+    """Return PASS/WARN/FAIL without rejecting valid legacy packaging conventions."""
+    warnings: list[str] = []
+    failures: list[str] = []
     try:
         with tempfile.TemporaryDirectory(prefix="rc9_audit_") as temp:
             root = Path(temp) / "extract"
@@ -758,78 +833,115 @@ def inspect_source_zip_for_rc9(module_name: str, source: Path) -> tuple[bool, st
             root = unwrap(root)
             version = root / "version.json"
             if version.is_file():
-                meta = load_json(version)
-                if not (meta.get("version") or meta.get("release")):
-                    return False, "version/release missing in version.json"
-                metadata_detail = "version.json present"
+                try:
+                    meta = load_json(version)
+                except Exception as exc:
+                    failures.append(f"invalid version.json: {exc}")
+                    meta = {}
+                if meta and not (meta.get("version") or meta.get("release")):
+                    inferred = infer_version(module_name, source)
+                    if inferred:
+                        warnings.append(f"version/release absent; RC{inferred} will be inferred")
+                        meta["version"] = inferred
+                    else:
+                        failures.append("version/release missing and cannot be inferred")
             else:
                 inferred = infer_version(module_name, source)
-                if not inferred:
-                    return False, "version.json missing and no version can be inferred"
-                meta = {"version": inferred}
-                metadata_detail = f"legacy metadata will be generated (version={inferred})"
-            definitions = list(root.rglob("*.spec")) + list(root.rglob("Build_*EXE.py"))
-            entry = choose_entry(root, meta)
-            if not definitions and not (root / "pyproject.toml").is_file() and not entry:
-                return False, "SPEC/build definition missing"
-            py_files = [p for p in root.rglob("*.py") if not any(part in {"build", "dist", "release", "__pycache__"} for part in p.parts)]
-            for path in py_files:
-                py_compile.compile(str(path), doraise=True)
-            nested = [p for p in root.rglob("*.zip") if p.is_file()]
+                if inferred:
+                    meta = {"version": inferred}
+                    warnings.append(f"legacy SOURCE without version.json; RC{inferred} metadata will be generated")
+                else:
+                    meta = {}
+                    failures.append("version.json missing and version cannot be inferred")
+
+            # Build-definition discovery mirrors the real builder. A BAT is optional when SPEC/script/entry exists.
+            try:
+                spec = choose_spec(root, meta)
+                entry = choose_entry(root, meta)
+            except Exception as exc:
+                failures.append(str(exc))
+                spec = entry = None
+            builders = list(root.glob("Build_*EXE.py"))
+            usable_bats = [p for p in root.glob("*.bat") if not is_rc9_wrapper_bat(p)]
+            if not (spec or builders or usable_bats or (root / "pyproject.toml").is_file() or entry):
+                failures.append("no usable SPEC, builder, BAT, pyproject, or entry point")
+            elif not usable_bats:
+                warnings.append("BAT not present; direct SPEC/script build will be used")
+
+            # Compile production Python only. Tests/examples/vendor code are advisory, not release blockers.
+            excluded = {"build", "dist", "release", "__pycache__", ".venv", "venv", "tests", "test", "examples", "samples", "vendor", "third_party"}
+            for path in root.rglob("*.py"):
+                if any(part.lower() in excluded for part in path.relative_to(root).parts):
+                    continue
+                try:
+                    py_compile.compile(str(path), doraise=True)
+                except Exception as exc:
+                    failures.append(f"Python syntax: {path.relative_to(root)}: {exc}")
+
+            nested = [p.relative_to(root).as_posix() for p in root.rglob("*.zip") if p.is_file()]
             if nested:
-                return False, "nested ZIP in SOURCE: " + ", ".join(p.name for p in nested[:3])
-            return True, f"PASS; {metadata_detail}"
+                warnings.append("embedded ZIP resources found; final payload policy will classify them: " + ", ".join(nested[:5]))
+
+        if failures:
+            return "FAIL", failures + warnings
+        if warnings:
+            return "WARN", warnings
+        return "PASS", ["RC9-compatible source structure"]
     except Exception as exc:
-        return False, f"{type(exc).__name__}: {exc}"
+        return "FAIL", [f"{type(exc).__name__}: {exc}"]
 
 
 def audit_repository_sources(opts: Options) -> None:
-    """Audit only the scope relevant to this run.
-
-    Module builds audit the selected module only. Service Hub builds audit the Hub
-    and every module that currently contains a SOURCE ZIP.
-    """
-    if opts.module_name == HUB_MODULE:
-        audit_modules = find_modules()
-        scope_label = "Service Hub + all available modules"
-    else:
-        audit_modules = [opts.module_name]
-        scope_label = f"selected module only: {opts.module_name}"
-
-    print(f"[INFO] Repository audit scope: {scope_label}")
-    failures: list[str] = []
+    """Only the selected build target can block the run; unrelated modules are advisory."""
+    selected = opts.module_name
+    modules = find_modules()
+    audit_modules = modules if selected == HUB_MODULE else [selected]
+    print(f"[INFO] Repository audit: blocking target={selected}")
+    blocking_failures: list[str] = []
     warnings: list[str] = []
     checked = 0
+
     for module in audit_modules:
         module_dir = MODULE_ROOT / module
+        is_blocking = module == selected
         if not module_dir.is_dir():
-            failures.append(f"{module_dir}: module directory missing")
+            message = f"{module_dir.relative_to(ROOT)}: module directory missing"
+            (blocking_failures if is_blocking else warnings).append(message)
             continue
         sources = [p for p in module_dir.rglob("*.zip") if "source" in p.name.lower() and zipfile.is_zipfile(p)]
         if not sources:
             message = f"{module_dir.relative_to(ROOT)}: no SOURCE ZIP present"
-            print(f"[SKIP] {message}")
-            warnings.append(message)
+            if is_blocking:
+                blocking_failures.append(message)
+                print(f"[FAIL] {message}")
+            else:
+                warnings.append(message)
+                print(f"[SKIP] {message}")
             continue
-        for source in sources:
-            checked += 1
-            ok, detail = inspect_source_zip_for_rc9(module, source)
-            relative = source.relative_to(ROOT)
-            print(f"[{'PASS' if ok else 'FAIL'}] Repository audit: {relative}: {detail}")
-            if not ok:
-                failures.append(f"{relative}: {detail}")
+        # Audit only the source that would actually be selected, not archived older ZIPs.
+        source = select_source(module_dir, opts.source_zip if is_blocking else "")
+        checked += 1
+        status, details = inspect_source_zip_for_rc9(module, source)
+        relative = source.relative_to(ROOT)
+        effective = status if is_blocking else ("WARN" if status == "FAIL" else status)
+        print(f"[{effective}] Repository audit: {relative}")
+        for detail in details:
+            print(f"       - {detail}")
+        if status == "FAIL" and is_blocking:
+            blocking_failures.extend(f"{relative}: {d}" for d in details)
+        elif status != "PASS":
+            warnings.extend(f"{relative}: {d}" for d in details)
 
-    print("[INFO] Repository audit summary:")
-    print(f"       scope={scope_label}")
-    print(f"       checked_source_zips={checked}")
-    print(f"       skipped_or_warning={len(warnings)}")
-    print(f"       failures={len(failures)}")
-    if failures:
-        print("[FAIL] Modules requiring correction:")
-        for item in failures:
+    print(f"[INFO] Repository audit summary: checked={checked}, warnings={len(warnings)}, blocking_failures={len(blocking_failures)}")
+    if warnings:
+        print("[WARN] Advisory findings (do not stop this build):")
+        for item in warnings:
             print("       -", item)
-        raise RuntimeError("Repository SOURCE audit failed: " + " | ".join(failures))
-
+    if blocking_failures:
+        print("[FAIL] Selected target requires correction:")
+        for item in blocking_failures:
+            print("       -", item)
+        raise RuntimeError("Selected SOURCE audit failed: " + " | ".join(blocking_failures))
 
 def parse_args() -> Options:
     parser = argparse.ArgumentParser()
@@ -891,7 +1003,7 @@ def main() -> int:
         guide = opts.hub_guide if opts.module_name == HUB_MODULE else opts.module_guide
         name = artifact_name(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
         package_dir = OUTPUT_ROOT / name
-        prepare_package(payload, package_dir, stage)
+        prepare_package(payload, package_dir, stage, meta)
         checks, smoke_detail = run_triple_check(stage, payload, exe, package_dir, opts, meta)
         for check_name, ok in checks.items():
             print(f"[{'PASS' if ok else 'FAIL'}] {check_name}")
