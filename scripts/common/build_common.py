@@ -17,6 +17,14 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 def latest_source_zip(module_dir: Path, exact: str="") -> Path:
+    if not exact:
+        try:
+            root=Path(__file__).resolve().parents[2]
+            reg=read_json(root/"config"/"module_registry.json")
+            cfg=reg.get("modules",{}).get(module_dir.name,{})
+            exact=str(cfg.get("source_zip","")).strip()
+        except Exception:
+            exact=""
     if exact:
         p=module_dir/exact
         if not p.is_file(): raise FileNotFoundError(f"SOURCE ZIP not found: {p}")
