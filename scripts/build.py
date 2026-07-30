@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import tomllib
+import traceback
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +54,14 @@ class Options:
     source_zip: str
 
 
+class BuildCommandError(RuntimeError):
+    def __init__(self, command: list[str], returncode: int, log_path: Path):
+        super().__init__(f"Command failed ({returncode}): {command}; log={log_path}")
+        self.command = command
+        self.returncode = returncode
+        self.log_path = log_path
+
+
 def env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
@@ -78,11 +87,25 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def run(command: list[str], cwd: Path) -> None:
+def run(command: list[str], cwd: Path, log_name: str = "command.log") -> Path:
+    """Run a command while preserving a complete UTF-8 build log."""
+    log_dir = cwd / "rc9_diagnostics"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / log_name
     print("[RUN]", subprocess.list2cmdline(command), flush=True)
-    completed = subprocess.run(command, cwd=cwd, check=False)
-    if completed.returncode:
-        raise RuntimeError(f"Command failed ({completed.returncode}): {command}")
+    with log_path.open("w", encoding="utf-8", errors="replace") as stream:
+        process = subprocess.Popen(
+            command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace"
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            stream.write(line)
+        returncode = process.wait()
+    if returncode:
+        raise BuildCommandError(command, returncode, log_path)
+    return log_path
 
 
 def find_modules() -> list[str]:
@@ -331,26 +354,125 @@ def choose_entry(stage: Path, meta: dict) -> Path | None:
     return None
 
 
+def collect_pyinstaller_diagnostics(stage: Path, failed_log: Path | None = None) -> dict:
+    """Collect actionable diagnostics from PyInstaller/Nuitka output and warn files."""
+    patterns = {
+        "missing_modules": re.compile(r"(?:missing module named|ModuleNotFoundError: No module named)\s*['\"]?([^'\"\s]+)", re.I),
+        "missing_dlls": re.compile(r"(?:failed to collect dynamic library|could not find|cannot find)[^\n]*?([A-Za-z0-9_.+-]+\.dll)", re.I),
+        "hidden_imports": re.compile(r"hidden import ['\"]([^'\"]+)['\"] not found", re.I),
+        "qt_plugins": re.compile(r"(?:qwindows\.dll|platforms[/\\]|Qt6[A-Za-z]+\.dll)", re.I),
+    }
+    texts: list[str] = []
+    files: list[str] = []
+    candidates = []
+    if failed_log and failed_log.is_file():
+        candidates.append(failed_log)
+    candidates.extend(stage.rglob("warn-*.txt"))
+    candidates.extend(stage.rglob("*.log"))
+    seen: set[Path] = set()
+    for path in candidates:
+        try:
+            path = path.resolve()
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            text = path.read_text(encoding="utf-8", errors="replace")
+            texts.append(text)
+            files.append(str(path.relative_to(stage.resolve())) if stage.resolve() in path.parents else str(path))
+        except Exception:
+            continue
+    joined = "\n".join(texts)
+    result: dict[str, object] = {"log_files": files}
+    for key, pattern in patterns.items():
+        values = sorted(set(m.group(1) if m.groups() else m.group(0) for m in pattern.finditer(joined)))
+        result[key] = values[:100]
+    lower = joined.lower()
+    classifications = []
+    for token, label in (
+        ("failed to collect dynamic library", "dynamic_library_collection"),
+        ("modulenotfounderror", "missing_python_module"),
+        ("hidden import", "hidden_import"),
+        ("qwindows.dll", "qt_platform_plugin"),
+        ("recursionerror", "recursion_error"),
+        ("permissionerror", "permission_error"),
+        ("no space left", "disk_space"),
+        ("syntaxerror", "syntax_error"),
+    ):
+        if token in lower:
+            classifications.append(label)
+    result["classifications"] = classifications
+    suggestions = []
+    if result["missing_modules"]:
+        suggestions.append("Add missing packages to requirements.txt and hidden imports to the SPEC where needed.")
+    if result["missing_dlls"]:
+        suggestions.append("Add the missing DLL package/runtime or collect_dynamic_libs() entry to the SPEC.")
+    if "qt_platform_plugin" in classifications or result["qt_plugins"]:
+        suggestions.append("Verify PySide6/Qt plugin collection, especially platforms/qwindows.dll.")
+    if "dynamic_library_collection" in classifications:
+        suggestions.append("Check collect_dynamic_libs()/binaries in the SPEC and architecture compatibility.")
+    result["suggestions"] = suggestions
+    return result
+
+
+def write_build_failure_report(stage: Path, exc: Exception) -> Path:
+    failed_log = exc.log_path if isinstance(exc, BuildCommandError) else None
+    diagnostics = collect_pyinstaller_diagnostics(stage, failed_log)
+    report = stage / "rc9_diagnostics" / "build_failure.json"
+    write_json(report, {
+        "schema": "rc9.build-diagnostics.v1",
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+        "traceback": traceback.format_exc(),
+        "diagnostics": diagnostics,
+    })
+    print("[FAIL] Build diagnostics report:", report)
+    for classification in diagnostics.get("classifications", []):
+        print("[DIAG] classification:", classification)
+    for item in diagnostics.get("missing_modules", []):
+        print("[DIAG] missing module:", item)
+    for item in diagnostics.get("missing_dlls", []):
+        print("[DIAG] missing DLL:", item)
+    for suggestion in diagnostics.get("suggestions", []):
+        print("[DIAG] suggestion:", suggestion)
+    return report
+
+
+def validate_runtime_payload(payload: Path) -> tuple[bool, list[str]]:
+    """Check common runtime files without assuming every module uses Qt."""
+    problems: list[str] = []
+    payload_files = [p for p in payload.rglob("*") if p.is_file()]
+    files_lower = {p.name.lower() for p in payload_files}
+    relative_text = " ".join(p.relative_to(payload).as_posix().lower() for p in payload_files)
+    uses_qt = any(name.startswith("qt6") and name.endswith(".dll") for name in files_lower) or "pyside6" in relative_text
+    if uses_qt:
+        if "qwindows.dll" not in files_lower:
+            problems.append("Qt payload missing platforms/qwindows.dll")
+        for dll in ("qt6core.dll", "qt6gui.dll", "qt6widgets.dll"):
+            if dll not in files_lower:
+                problems.append(f"Qt payload missing {dll}")
+    return not problems, problems
+
+
 def build(stage: Path, meta: dict) -> None:
     spec = choose_spec(stage, meta)
     if spec:
-        run([sys.executable, "-m", "PyInstaller", "--noconfirm", spec.name], stage)
+        run([sys.executable, "-m", "PyInstaller", "--noconfirm", spec.name], stage, "pyinstaller_spec.log")
         return
     requested_builder = str(meta.get("build_script", "")).strip()
     builder_candidates = ([stage / requested_builder] if requested_builder else []) + [stage / "Build_Hub_EXE.py", stage / "build.py"]
     builder = next((p for p in builder_candidates if p.is_file() and p.resolve() != Path(__file__).resolve()), None)
     if builder:
-        run([sys.executable, builder.name], stage)
+        run([sys.executable, builder.name], stage, "builder_script.log")
         return
     bats = [stage / n for n in ("01_BUILD_EXE_NUITKA.bat", "BUILD_EXE_NUITKA.bat", "BUILD_EXE.bat", "build.bat", "01_BUILD_EXE.bat")]
     bat = next((p for p in bats if p.is_file() and not is_rc9_wrapper_bat(p)), None)
     if bat and os.name == "nt":
-        run(["cmd.exe", "/d", "/c", bat.name], stage)
+        run(["cmd.exe", "/d", "/c", bat.name], stage, "builder_bat.log")
         return
     entry = choose_entry(stage, meta)
     if not entry:
         raise RuntimeError("No unambiguous SPEC, builder, usable BAT, pyproject entry, or Python entry point.")
-    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed", "--name", entry.stem, str(entry.relative_to(stage))], stage)
+    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed", "--name", entry.stem, str(entry.relative_to(stage))], stage, "pyinstaller_entry.log")
 
 
 def find_distribution(stage: Path) -> tuple[Path, Path]:
@@ -510,6 +632,9 @@ def run_triple_check(stage: Path, payload: Path, exe: Path, package_dir: Path,
     p_safe, p_no_double, p_has_exe, p_has_options, p_manifest = inspect_package(package_dir, opts, meta)
     options = load_json(stage / "build_options.json")
     smoke_ok, smoke_detail = startup_smoke_test(exe)
+    runtime_ok, runtime_problems = validate_runtime_payload(payload)
+    if runtime_problems:
+        smoke_detail = smoke_detail + " | " + " | ".join(runtime_problems)
     checks = {
         "version.json": (stage / "version.json").is_file() and bool(meta.get("version")),
         "manifest": validate_manifest(stage, opts, meta) and p_manifest,
@@ -520,6 +645,7 @@ def run_triple_check(stage: Path, payload: Path, exe: Path, package_dir: Path,
         "Python syntax": python_syntax_check(stage) >= 1,
         "dist generated": payload.is_dir() and any(payload.iterdir()),
         "EXE generated": exe.is_file() and exe.stat().st_size > 0,
+        "Runtime dependency payload": runtime_ok,
         "EXE startup smoke test": smoke_ok,
         "Artifact payload generated": package_dir.is_dir() and any(package_dir.iterdir()),
         "No double ZIP": p_no_double,
@@ -752,7 +878,15 @@ def main() -> int:
         apply_options(stage, opts, meta)
         ensure_rc9_manifest(stage, opts, meta)
         install_requirements(stage)
-        build(stage, meta)
+        try:
+            build(stage, meta)
+        except Exception as exc:
+            report = write_build_failure_report(stage, exc)
+            diagnostic_out = OUTPUT_ROOT / f"BUILD_FAILURE_{opts.module_name}"
+            shutil.rmtree(diagnostic_out, ignore_errors=True)
+            shutil.copytree(report.parent, diagnostic_out)
+            publish_github_outputs(f"BUILD_FAILURE_{opts.module_name}", diagnostic_out)
+            raise
         payload, exe = find_distribution(stage)
         guide = opts.hub_guide if opts.module_name == HUB_MODULE else opts.module_guide
         name = artifact_name(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
