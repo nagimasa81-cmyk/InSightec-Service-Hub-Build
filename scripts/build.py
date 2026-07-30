@@ -545,18 +545,47 @@ def choose_build_definition(stage: Path, meta: dict) -> tuple[Path | None, list[
         if _negative_candidate(path):
             score -= 70
             reasons.append("debug/test/archive naming")
-        if name in {"build_exe.bat", "build_exe.cmd", "01_build_exe.bat", "build_hub_exe.py", "build_exe.py"}:
-            score += 130
+        # CI-specific launchers must win deterministically.  Legacy modules often
+        # contain several valid BAT files (GitHub, Nuitka, local Windows, debug).
+        # Give each class a distinct score instead of creating avoidable ties.
+        if name in {"01_build_exe_github.bat", "build_exe_github.bat", "github_build_exe.bat"}:
+            score += 220
+            reasons.append("GitHub CI production launcher")
+        elif "github" in name and ("build_exe" in name or "buildexe" in name):
+            score += 205
+            reasons.append("GitHub-named EXE launcher")
+        elif name in {"01_build_exe_nuitka.bat", "build_exe_nuitka.bat"}:
+            score += 190
+            reasons.append("canonical Nuitka production launcher")
+        elif "nuitka" in name and ("build_exe" in name or "buildexe" in name):
+            score += 175
+            reasons.append("Nuitka EXE launcher")
+        elif name in {"build_exe.bat", "build_exe.cmd", "01_build_exe.bat", "build_hub_exe.py", "build_exe.py"}:
+            score += 160
             reasons.append("canonical production launcher")
         elif "build_exe" in name or "buildexe" in name:
-            score += 110
+            score += 130
             reasons.append("EXE build launcher")
         elif name.startswith("build") or name.startswith("01_build"):
-            score += 85
+            score += 95
             reasons.append("build-prefixed launcher")
         elif "build" in name:
-            score += 60
+            score += 65
             reasons.append("build-named launcher")
+
+        # Local-machine and environment-specific launchers remain available but
+        # must not beat a CI/general production launcher when both are present.
+        local_tokens = ("windows11", "local", "desktop", "manual", "python313", "python314")
+        matched_local = [token for token in local_tokens if token in name]
+        if matched_local:
+            score -= 35
+            reasons.append("local/environment-specific naming: " + ",".join(matched_local))
+        if "no_excel" in name or "no-excel" in name:
+            score -= 8
+            reasons.append("feature-specific launcher")
+        if "final" in name:
+            score -= 3
+            reasons.append("legacy FINAL suffix")
         if suffix in {".bat", ".cmd"}:
             score += 15
             reasons.append("Windows module launcher")
@@ -579,9 +608,13 @@ def choose_build_definition(stage: Path, meta: dict) -> tuple[Path | None, list[
     top_score = int(viable[0]["score"])
     tied = [c for c in viable if int(c["score"]) == top_score]
     if len(tied) > 1:
+        detail = "; ".join(
+            f"{c['path']} score={c['score']} reasons={','.join(str(r) for r in c['reasons'])}"
+            for c in tied
+        )
         raise RuntimeError(
-            "Multiple equally ranked build launchers found. Set build_script in version.json: "
-            + ", ".join(str(c["path"]) for c in tied)
+            "Multiple genuinely indistinguishable build launchers remain after CI ranking. "
+            "Set build_script in version.json. Candidates: " + detail
         )
     viable[0]["selected"] = True
     selected = stage / str(viable[0]["path"])
