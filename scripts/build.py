@@ -1221,13 +1221,21 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
             print(f"[PASS] Module cache restored for Hub integration: {opts.module_name}")
             return cached_package
 
-    with tempfile.TemporaryDirectory(prefix=f"rc9_{opts.module_name}_") as temp:
-        extract = Path(temp) / "extract"
+    # Do not use tempfile.TemporaryDirectory here. On Windows its context-manager
+    # cleanup can raise WinError 5 after a successful EXE build when Defender or
+    # another scanner still holds the generated executable. A unique work folder
+    # plus best-effort cleanup prevents that non-critical cleanup failure from
+    # overriding an already successful build and cache publication.
+    work_dir = Path(tempfile.mkdtemp(prefix=f"rc9_{opts.module_name}_"))
+    build_result: Path | None = None
+    build_succeeded = False
+    try:
+        extract = work_dir / "extract"
         extract.mkdir()
         safe_extract(source, extract)
         root = unwrap(extract)
         meta = metadata(root, opts.module_name, source)
-        stage = Path(temp) / "stage"
+        stage = work_dir / "stage"
         copy_source(root, stage)
         apply_options(stage, opts, meta)
         ensure_rc9_manifest(stage, opts, meta)
@@ -1246,10 +1254,13 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
             if publish:
                 publish_github_outputs(f"BUILD_FAILURE_{opts.module_name}", diagnostic_out)
             raise
+
         payload, exe = find_distribution(stage)
+        if not wait_for_file_stability(exe):
+            raise RuntimeError(f"Built EXE did not become stable/readable within timeout: {exe}")
         guide = (opts.hub_guide or opts.module_guide) if opts.module_name == HUB_MODULE else opts.module_guide
         name = artifact_name(opts.module_name, opts.hub_variant, str(meta["version"]), guide)
-        package_dir = OUTPUT_ROOT / name if publish else Path(temp) / "package"
+        package_dir = OUTPUT_ROOT / name if publish else work_dir / "package"
         prepare_package(payload, package_dir, stage, meta)
         checks, smoke_detail = run_triple_check(stage, payload, exe, package_dir, opts, meta)
         if opts.module_name == HUB_MODULE:
@@ -1264,6 +1275,7 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
             if publish:
                 safe_rmtree(package_dir)
             raise RuntimeError("Triple Check failed before Artifact publication: " + ", ".join(failed))
+
         report = package_dir / "triple_check.json"
         write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
         checks["Cache"] = save_cache(cache_dir, package_dir, report)
@@ -1273,13 +1285,25 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
             raise RuntimeError("Triple Check failed: Cache")
         write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
         safe_copy2(report, cache_dir / "triple_check.json")
+
         if publish:
             publish_github_outputs(name, package_dir)
             print("[PASS] Artifact payload:", package_dir)
-            return package_dir
-        print(f"[PASS] Module built and cached for Hub integration: {opts.module_name}")
-        return cache_dir / "package"
-
+            build_result = package_dir
+        else:
+            print(f"[PASS] Module built and cached for Hub integration: {opts.module_name}")
+            build_result = cache_dir / "package"
+        build_succeeded = True
+        return build_result
+    finally:
+        cleanup_ok = safe_rmtree(work_dir, required=False)
+        if not cleanup_ok:
+            # The output and validated cache are outside work_dir. A remaining
+            # temporary folder is therefore advisory only after success.
+            status = "successful build" if build_succeeded else "failed build"
+            print(f"[WARN] Temporary work directory retained after {status}: {work_dir}")
+        elif build_succeeded:
+            print(f"[PASS] Temporary build workspace cleaned: {work_dir}")
 
 def parse_args() -> Options:
     parser = argparse.ArgumentParser()
