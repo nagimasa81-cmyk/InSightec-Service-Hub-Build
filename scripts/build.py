@@ -118,6 +118,100 @@ def run(command: list[str], cwd: Path, log_name: str = "command.log") -> Path:
     return log_path
 
 
+
+
+def retry_io(operation, description: str, attempts: int = 12, initial_delay: float = 0.5):
+    """Retry transient Windows file locking failures with bounded backoff."""
+    delay = initial_delay
+    last = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except (PermissionError, OSError) as exc:
+            last = exc
+            winerror = getattr(exc, "winerror", None)
+            transient = isinstance(exc, PermissionError) or winerror in {5, 32, 33}
+            if not transient or attempt == attempts:
+                raise
+            print(f"[WARN] {description} is temporarily locked; retry {attempt}/{attempts} in {delay:.1f}s: {exc}")
+            time.sleep(delay)
+            delay = min(delay * 1.5, 3.0)
+    raise last or RuntimeError(description)
+
+
+def safe_rmtree(path: Path, *, required: bool = False) -> bool:
+    if not path.exists():
+        return True
+    try:
+        retry_io(lambda: shutil.rmtree(path), f"Remove directory {path}")
+        return not path.exists()
+    except Exception as exc:
+        if required:
+            raise
+        print(f"[WARN] Cleanup deferred because the path remains locked: {path}: {exc}")
+        return False
+
+
+def safe_copy2(source: Path, destination: Path) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    return retry_io(lambda: shutil.copy2(source, destination), f"Copy file {source.name}")
+
+
+def safe_copytree(source: Path, destination: Path) -> Path:
+    if destination.exists():
+        safe_rmtree(destination, required=True)
+    return retry_io(lambda: shutil.copytree(source, destination), f"Copy directory {source.name}")
+
+
+def wait_for_file_stability(path: Path, timeout: float = 30.0) -> bool:
+    """Wait until a produced file can be opened and its size stops changing."""
+    deadline = time.monotonic() + timeout
+    previous = None
+    stable_hits = 0
+    while time.monotonic() < deadline:
+        try:
+            size = path.stat().st_size
+            with path.open("rb") as stream:
+                stream.read(1)
+            if size > 0 and size == previous:
+                stable_hits += 1
+                if stable_hits >= 3:
+                    return True
+            else:
+                stable_hits = 0
+            previous = size
+        except (FileNotFoundError, PermissionError, OSError):
+            stable_hits = 0
+        time.sleep(0.5)
+    return False
+
+
+def recoverable_post_build_cleanup_failure(exc: BuildCommandError, stage: Path) -> bool:
+    """Accept a completed build only when a child builder failed solely during locked-file cleanup."""
+    try:
+        text = exc.log_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    lower = text.lower()
+    cleanup_markers = ("permissionerror", "winerror 5", "access is denied", "being used by another process")
+    cleanup_context = ("cleanup", "rmtree", "unlink", "remove", "shutil")
+    if not any(marker in lower for marker in cleanup_markers):
+        return False
+    if not any(marker in lower for marker in cleanup_context):
+        return False
+    try:
+        payload, exe = find_distribution(stage)
+    except Exception:
+        return False
+    if not wait_for_file_stability(exe):
+        return False
+    if not payload.is_dir() or not any(payload.iterdir()):
+        return False
+    print("[WARN] Child builder returned non-zero only during post-build cleanup.")
+    print(f"[PASS] Recovering verified completed distribution: {exe}")
+    return True
+
+
 def find_modules() -> list[str]:
     if not MODULE_ROOT.is_dir():
         raise FileNotFoundError(f"Module directory missing: {MODULE_ROOT}")
@@ -526,7 +620,12 @@ def run_build_definition(definition: Path, stage: Path, log_stem: str = "builder
         )
     print(f"[INFO] Selected build launcher: {launcher_name}")
     print(f"[INFO] Build definition: {relative}")
-    run(launcher, stage, f"{log_stem}_{launcher_name.lower()}.log")
+    try:
+        run(launcher, stage, f"{log_stem}_{launcher_name.lower()}.log")
+    except BuildCommandError as exc:
+        if recoverable_post_build_cleanup_failure(exc, stage):
+            return
+        raise
 
 
 def build(stage: Path, meta: dict) -> None:
@@ -582,6 +681,8 @@ def find_distribution(stage: Path) -> tuple[Path, Path]:
         exes = top or exes
     exe = max(exes, key=lambda p: p.stat().st_mtime_ns)
     payload = exe.parent if exe.parent != dist_root else dist_root
+    if not wait_for_file_stability(exe):
+        raise RuntimeError(f"EXE remained locked or unstable after build: {exe}")
     return payload, exe
 
 
@@ -638,7 +739,7 @@ def prepare_package(payload: Path, package_dir: Path, stage: Path, meta: dict) -
     Do not create a distributable ZIP here. upload-artifact produces the one and only
     downloaded ZIP. This prevents GitHub Artifact ZIP -> product/distribution ZIP nesting while preserving required runtime ZIPs.
     """
-    shutil.rmtree(package_dir, ignore_errors=True)
+    safe_rmtree(package_dir)
     package_dir.mkdir(parents=True, exist_ok=True)
     inventory = payload_zip_inventory(payload, meta)
     forbidden = [item for item in inventory if not item["allowed"]]
@@ -654,12 +755,12 @@ def prepare_package(payload: Path, package_dir: Path, stage: Path, meta: dict) -
         relative = path.relative_to(payload)
         target = package_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
+        safe_copy2(path, target)
     for name in ("version.json", "build_options.json", "hub_manifest.json", "manifest.json"):
         source = stage / name
         target = package_dir / name
         if source.is_file() and not target.exists():
-            shutil.copy2(source, target)
+            safe_copy2(source, target)
     write_json(package_dir / "payload_zip_inventory.json", {
         "schema": "rc9.payload_zip_inventory.v1",
         "outer_archive_created_by": "actions/upload-artifact",
@@ -841,11 +942,11 @@ def write_report(path: Path, checks: dict[str, bool], key: str, source: Path,
 
 
 def save_cache(cache_dir: Path, package_dir: Path, report: Path) -> bool:
-    shutil.rmtree(cache_dir, ignore_errors=True)
+    safe_rmtree(cache_dir)
     cached_package = cache_dir / "package"
     cached_package.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(package_dir, cached_package)
-    shutil.copy2(report, cache_dir / "triple_check.json")
+    safe_copytree(package_dir, cached_package)
+    safe_copy2(report, cache_dir / "triple_check.json")
     return directory_sha256(cached_package) == directory_sha256(package_dir)
 
 
@@ -877,8 +978,8 @@ def restore_cache(cache_dir: Path, key: str, source: Path, opts: Options) -> boo
         return False
     artifact_name_value = str(report["artifact"])
     output_package = OUTPUT_ROOT / artifact_name_value
-    shutil.copytree(cached_package, output_package)
-    shutil.copy2(report_path, output_package / "triple_check.json")
+    safe_copytree(cached_package, output_package)
+    safe_copy2(report_path, output_package / "triple_check.json")
     publish_github_outputs(artifact_name_value, output_package)
     print("[PASS] Cache restored:", artifact_name_value)
     return True
@@ -889,7 +990,7 @@ def prune_cache(limit: int = 20) -> None:
         return
     dirs = sorted((p for p in CACHE_ROOT.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime_ns, reverse=True)
     for old in dirs[limit:]:
-        shutil.rmtree(old, ignore_errors=True)
+        safe_rmtree(old)
 
 
 def publish_github_outputs(name: str, package_dir: Path) -> None:
@@ -1043,7 +1144,7 @@ def integrate_module_packages(hub_stage: Path, packages: dict[str, Path]) -> Non
     for module_name in BUNDLED_MODULES:
         package = packages[module_name]
         destination = tools_root / HUB_TOOL_DIRS[module_name]
-        shutil.rmtree(destination, ignore_errors=True)
+        safe_rmtree(destination)
         shutil.copytree(package, destination)
         manifest = destination / "manifest.json"
         version_file = destination / "version.json"
@@ -1076,7 +1177,7 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
     key = cache_key(source, opts, dependency_hashes)
     cache_dir = CACHE_ROOT / key
     if clear_output:
-        shutil.rmtree(OUTPUT_ROOT, ignore_errors=True)
+        safe_rmtree(OUTPUT_ROOT)
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     CACHE_ROOT.mkdir(exist_ok=True)
     prune_cache()
@@ -1111,9 +1212,9 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
             name = str(report["artifact"])
             if publish:
                 output_package = OUTPUT_ROOT / name
-                shutil.rmtree(output_package, ignore_errors=True)
-                shutil.copytree(cached_package, output_package)
-                shutil.copy2(report_path, output_package / "triple_check.json")
+                safe_rmtree(output_package)
+                safe_copytree(cached_package, output_package)
+                safe_copy2(report_path, output_package / "triple_check.json")
                 publish_github_outputs(name, output_package)
                 print("[PASS] Cache restored:", name)
                 return output_package
@@ -1140,8 +1241,8 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
         except Exception as exc:
             report = write_build_failure_report(stage, exc)
             diagnostic_out = OUTPUT_ROOT / f"BUILD_FAILURE_{opts.module_name}"
-            shutil.rmtree(diagnostic_out, ignore_errors=True)
-            shutil.copytree(report.parent, diagnostic_out)
+            safe_rmtree(diagnostic_out)
+            safe_copytree(report.parent, diagnostic_out)
             if publish:
                 publish_github_outputs(f"BUILD_FAILURE_{opts.module_name}", diagnostic_out)
             raise
@@ -1161,17 +1262,17 @@ def build_one(opts: Options, *, publish: bool, clear_output: bool,
         failed = [check_name for check_name, ok in checks.items() if ok is not True]
         if failed:
             if publish:
-                shutil.rmtree(package_dir, ignore_errors=True)
+                safe_rmtree(package_dir)
             raise RuntimeError("Triple Check failed before Artifact publication: " + ", ".join(failed))
         report = package_dir / "triple_check.json"
         write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
         checks["Cache"] = save_cache(cache_dir, package_dir, report)
         if not checks["Cache"]:
             if publish:
-                shutil.rmtree(package_dir, ignore_errors=True)
+                safe_rmtree(package_dir)
             raise RuntimeError("Triple Check failed: Cache")
         write_report(report, checks, key, source, name, package_dir, opts, smoke_detail)
-        shutil.copy2(report, cache_dir / "triple_check.json")
+        safe_copy2(report, cache_dir / "triple_check.json")
         if publish:
             publish_github_outputs(name, package_dir)
             print("[PASS] Artifact payload:", package_dir)
@@ -1203,7 +1304,7 @@ def main() -> int:
     opts = parse_args()
     find_modules()
     audit_repository_sources(opts)
-    shutil.rmtree(OUTPUT_ROOT, ignore_errors=True)
+    safe_rmtree(OUTPUT_ROOT)
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     CACHE_ROOT.mkdir(exist_ok=True)
 
