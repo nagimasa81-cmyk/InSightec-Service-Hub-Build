@@ -187,12 +187,28 @@ def python_syntax_check(root: Path) -> int:
 
 
 def install_requirements(root: Path) -> None:
+    """Install all build dependencies with pip only.
+
+    RC9 uses the active interpreter selected by actions/setup-python through
+    ``python -m pip`` so PATH
+    differences cannot select another Python installation.
+    """
+    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], root)
+
     requirement = next(
         (root / name for name in ("requirements-build.txt", "requirements.txt") if (root / name).is_file()),
         None,
     )
     if requirement:
         run([sys.executable, "-m", "pip", "install", "-r", str(requirement)], root)
+
+    # Ensure the common builders are available even when an older SOURCE ZIP
+    # omitted them from its requirements file.  Existing compatible packages
+    # are reused by pip.
+    run([
+        sys.executable, "-m", "pip", "install",
+        "pyinstaller", "nuitka", "ordered-set", "zstandard",
+    ], root)
 
 
 def is_rc9_wrapper_bat(path: Path) -> bool:
