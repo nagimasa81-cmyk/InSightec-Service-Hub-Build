@@ -268,10 +268,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.build.outputs.artifact_name }}
+          # Upload the release directory directly. GitHub creates the single outer ZIP.
+          # This avoids a ZIP file inside the downloaded Artifact ZIP.
           path: |
-            ${{ steps.build.outputs.artifact_path }}
-            ${{ steps.build.outputs.artifact_path }}.sha256
-            artifacts/build_summary.json
+            ${{ steps.build.outputs.artifact_path }}/**
           if-no-files-found: error
           compression-level: 0
 
