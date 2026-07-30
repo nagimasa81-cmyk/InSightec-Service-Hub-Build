@@ -442,6 +442,34 @@ def is_rc9_wrapper_bat(path: Path) -> bool:
     return "scripts\\build.py" in text or "scripts/build.py" in text
 
 
+def _candidate_paths(stage: Path, patterns: tuple[str, ...], max_depth: int = 2) -> list[Path]:
+    """Return build-definition candidates near the source root.
+
+    Legacy modules occasionally keep the real launcher in a single nested source
+    directory. Searching only the root made otherwise valid modules fail with a
+    generic "No unambiguous" message. We search at most two levels and exclude
+    generated, test and archival trees.
+    """
+    excluded = {"build", "dist", "release", "artifacts", "tests", "test", "examples", "samples", "vendor", "third_party", "backup", "old", "__pycache__", ".git", ".venv", "venv"}
+    found: list[Path] = []
+    for pattern in patterns:
+        for path in stage.rglob(pattern):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(stage)
+            if len(rel.parts) - 1 > max_depth:
+                continue
+            if any(part.lower() in excluded for part in rel.parts[:-1]):
+                continue
+            found.append(path)
+    return sorted(set(found), key=lambda x: x.relative_to(stage).as_posix().lower())
+
+
+def _negative_candidate(path: Path) -> bool:
+    name = path.stem.lower()
+    return any(token in name for token in ("debug", "console", "test", "sample", "example", "old", "backup", "deprecated"))
+
+
 def choose_spec(stage: Path, meta: dict) -> Path | None:
     requested = str(meta.get("build_spec", "")).strip()
     if requested:
@@ -449,23 +477,23 @@ def choose_spec(stage: Path, meta: dict) -> Path | None:
         if not path.is_file():
             raise FileNotFoundError(f"version.json build_spec missing: {requested}")
         return path
-    specs = sorted(stage.glob("*.spec"))
+    specs = _candidate_paths(stage, ("*.spec",))
     if not specs:
         return None
     if len(specs) == 1:
         return specs[0]
-    # Legacy projects often keep old/debug SPEC files. Prefer a production-looking SPEC.
-    debug_tokens = ("debug", "console", "old", "backup", "test")
-    production = [p for p in specs if not any(t in p.stem.lower() for t in debug_tokens)]
+    production = [p for p in specs if not _negative_candidate(p)]
     if len(production) == 1:
-        print(f"[WARN] Multiple SPEC files found; selected production candidate: {production[0].name}")
+        print(f"[WARN] Multiple SPEC files found; selected production candidate: {production[0].relative_to(stage)}")
         return production[0]
-    product_tokens = [str(meta.get(k, "")).lower().replace(" ", "") for k in ("product", "name", "executable") if meta.get(k)]
-    matching = [p for p in (production or specs) if any(t and t in p.stem.lower().replace("_", "") for t in product_tokens)]
+    product_tokens = [re.sub(r"[^a-z0-9]", "", str(meta.get(k, "")).lower()) for k in ("product", "name", "executable") if meta.get(k)]
+    pool = production or specs
+    matching = [p for p in pool if any(t and t in re.sub(r"[^a-z0-9]", "", p.stem.lower()) for t in product_tokens)]
     if len(matching) == 1:
-        print(f"[WARN] Multiple SPEC files found; selected metadata match: {matching[0].name}")
+        print(f"[WARN] Multiple SPEC files found; selected metadata match: {matching[0].relative_to(stage)}")
         return matching[0]
-    raise RuntimeError("Multiple plausible SPEC files found. Set build_spec in version.json: " + ", ".join(p.name for p in specs))
+    raise RuntimeError("Multiple plausible SPEC files found. Set build_spec in version.json: " + ", ".join(p.relative_to(stage).as_posix() for p in specs))
+
 
 def choose_entry(stage: Path, meta: dict) -> Path | None:
     requested = str(meta.get("build_entry", "")).strip()
@@ -474,11 +502,15 @@ def choose_entry(stage: Path, meta: dict) -> Path | None:
         if not path.is_file():
             raise FileNotFoundError(f"version.json build_entry missing: {requested}")
         return path
-    # Deterministic legacy priority avoids rejecting projects that include helper app.py files.
-    for name in ("InSightecServiceHub.py", "main.py", "app.py"):
-        candidate = stage / name
-        if candidate.is_file():
-            return candidate
+    preferred_names = (
+        "InSightecServiceHub.py", "main.py", "app.py", "launcher.py", "gui.py",
+        "run.py", "start.py", "trackerSNR.py", "TrackerSNR.py", "tracker_snr.py",
+    )
+    for name in preferred_names:
+        candidates = _candidate_paths(stage, (name,))
+        production = [p for p in candidates if not _negative_candidate(p)]
+        if len(production) == 1:
+            return production[0]
     pyproject = stage / "pyproject.toml"
     if pyproject.is_file():
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -489,6 +521,72 @@ def choose_entry(stage: Path, meta: dict) -> Path | None:
             if candidate.is_file():
                 return candidate
     return None
+
+
+def choose_build_definition(stage: Path, meta: dict) -> tuple[Path | None, list[dict[str, object]]]:
+    """Score legacy build launchers and return one deterministic production choice.
+
+    Explicit version.json settings still win. Debug/test launchers are retained in
+    diagnostics but are not selected when a production candidate exists.
+    """
+    candidates: list[dict[str, object]] = []
+    patterns = ("*.bat", "*.cmd", "*.ps1", "Build*.py", "build*.py", "*build*.py")
+    for path in _candidate_paths(stage, patterns):
+        if path.resolve() == Path(__file__).resolve():
+            continue
+        rel = path.relative_to(stage).as_posix()
+        suffix = path.suffix.lower()
+        name = path.name.lower()
+        score = 0
+        reasons: list[str] = []
+        if suffix in {".bat", ".cmd"} and is_rc9_wrapper_bat(path):
+            candidates.append({"path": rel, "score": -1000, "selected": False, "reasons": ["RC9 wrapper recursion"]})
+            continue
+        if _negative_candidate(path):
+            score -= 70
+            reasons.append("debug/test/archive naming")
+        if name in {"build_exe.bat", "build_exe.cmd", "01_build_exe.bat", "build_hub_exe.py", "build_exe.py"}:
+            score += 130
+            reasons.append("canonical production launcher")
+        elif "build_exe" in name or "buildexe" in name:
+            score += 110
+            reasons.append("EXE build launcher")
+        elif name.startswith("build") or name.startswith("01_build"):
+            score += 85
+            reasons.append("build-prefixed launcher")
+        elif "build" in name:
+            score += 60
+            reasons.append("build-named launcher")
+        if suffix in {".bat", ".cmd"}:
+            score += 15
+            reasons.append("Windows module launcher")
+        elif suffix == ".py":
+            score += 10
+            reasons.append("Python builder")
+        elif suffix == ".ps1":
+            score += 5
+            reasons.append("PowerShell builder")
+        depth = len(path.relative_to(stage).parts) - 1
+        score -= depth * 5
+        if depth:
+            reasons.append(f"nested depth {depth}")
+        candidates.append({"path": rel, "score": score, "selected": False, "reasons": reasons})
+
+    viable = [c for c in candidates if int(c["score"]) >= 0]
+    if not viable:
+        return None, candidates
+    viable.sort(key=lambda c: (-int(c["score"]), str(c["path"]).lower()))
+    top_score = int(viable[0]["score"])
+    tied = [c for c in viable if int(c["score"]) == top_score]
+    if len(tied) > 1:
+        raise RuntimeError(
+            "Multiple equally ranked build launchers found. Set build_script in version.json: "
+            + ", ".join(str(c["path"]) for c in tied)
+        )
+    viable[0]["selected"] = True
+    selected = stage / str(viable[0]["path"])
+    print(f"[INFO] Auto-selected build definition: {viable[0]['path']} (score={top_score})")
+    return selected, candidates
 
 def collect_pyinstaller_diagnostics(stage: Path, failed_log: Path | None = None) -> dict:
     """Collect actionable diagnostics from PyInstaller/Nuitka output and warn files."""
@@ -646,24 +744,18 @@ def build(stage: Path, meta: dict) -> None:
         run_build_definition(spec, stage, "selected_spec")
         return
 
-    builder_candidates = [stage / "Build_Hub_EXE.py", stage / "build.py"]
-    builder = next((p for p in builder_candidates if p.is_file() and p.resolve() != Path(__file__).resolve()), None)
-    if builder:
-        run_build_definition(builder, stage, "builder_script")
-        return
-
-    bats = [stage / n for n in (
-        "01_BUILD_EXE_NUITKA.bat", "BUILD_EXE_NUITKA.bat", "BUILD_EXE.bat",
-        "build_exe.bat", "build.bat", "01_BUILD_EXE.bat"
-    )]
-    bat = next((p for p in bats if p.is_file() and not is_rc9_wrapper_bat(p)), None)
-    if bat:
-        run_build_definition(bat, stage, "builder_bat")
+    definition, candidates = choose_build_definition(stage, meta)
+    if definition:
+        run_build_definition(definition, stage, "selected_builder")
         return
 
     entry = choose_entry(stage, meta)
     if not entry:
-        raise RuntimeError("No unambiguous SPEC, builder, usable BAT, pyproject entry, or Python entry point.")
+        summary = "; ".join(f"{c['path']} score={c['score']}" for c in candidates) or "none detected"
+        raise RuntimeError(
+            "No usable production build definition or Python entry point. "
+            "Set build_script/build_spec/build_entry in version.json. Candidates: " + summary
+        )
     print("[INFO] Selected build launcher: PYINSTALLER")
     print(f"[INFO] Build entry: {entry.relative_to(stage)}")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed", "--name", entry.stem, str(entry.relative_to(stage))], stage, "pyinstaller_entry.log")
@@ -1044,12 +1136,17 @@ def inspect_source_zip_for_rc9(module_name: str, source: Path) -> tuple[str, lis
             except Exception as exc:
                 failures.append(str(exc))
                 spec = entry = None
-            builders = list(root.glob("Build_*EXE.py"))
-            usable_bats = [p for p in root.glob("*.bat") if not is_rc9_wrapper_bat(p)]
-            if not (spec or builders or usable_bats or (root / "pyproject.toml").is_file() or entry):
-                failures.append("no usable SPEC, builder, BAT, pyproject, or entry point")
+            try:
+                auto_definition, candidate_report = choose_build_definition(root, meta)
+            except Exception as exc:
+                failures.append(str(exc))
+                auto_definition, candidate_report = None, []
+            usable_bats = [p for p in _candidate_paths(root, ("*.bat", "*.cmd")) if not is_rc9_wrapper_bat(p) and not _negative_candidate(p)]
+            if not (spec or auto_definition or (root / "pyproject.toml").is_file() or entry):
+                candidate_text = ", ".join(str(c.get("path")) for c in candidate_report) or "none"
+                failures.append("no usable SPEC, builder, BAT, pyproject, or entry point; detected candidates: " + candidate_text)
             elif not usable_bats:
-                warnings.append("BAT not present; direct SPEC/script build will be used")
+                warnings.append("BAT not present; direct SPEC/script/entry build will be used")
 
             # Compile production Python only. Tests/examples/vendor code are advisory, not release blockers.
             excluded = {"build", "dist", "release", "__pycache__", ".venv", "venv", "tests", "test", "examples", "samples", "vendor", "third_party"}
