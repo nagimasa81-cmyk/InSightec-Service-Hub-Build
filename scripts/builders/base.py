@@ -101,5 +101,6 @@ class BaseBuilder:
             "INSIGHTEC_GUIDE_ENABLED":"1" if self.ctx.guide else "0",
             "INSIGHTEC_HUB_VARIANT":self.ctx.hub_variant,
             "INSIGHTEC_RELEASE_MODE":"1",
+            "INSIGHTEC_BUILD_STAGE":str(getattr(self.ctx,"build_stage","") or os.getenv("INSIGHTEC_BUILD_STAGE", "")),
         })
         return e

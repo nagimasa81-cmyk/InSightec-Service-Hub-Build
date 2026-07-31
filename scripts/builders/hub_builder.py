@@ -26,6 +26,7 @@ class HubBuilder(BaseBuilder):
         # Never rebuild stale integrated_sources bundled inside the Hub SOURCE.
         env["INSIGHTEC_EXTERNAL_TOOL_ASSEMBLY"] = "1"
         env["INSIGHTEC_INCLUDE_SONICATION"] = "1" if self.ctx.include_sonication else "0"
+        env["INSIGHTEC_BUILD_STAGE"] = str(getattr(self.ctx, "build_stage", "hub_build") or "hub_build")
         return env
 
     def prepare_source(self):
