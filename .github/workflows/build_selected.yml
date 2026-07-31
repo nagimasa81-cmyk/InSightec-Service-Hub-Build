@@ -279,7 +279,11 @@ jobs:
       - name: Resolve module dependencies
         if: steps.reusable.outputs.available != 'true'
         shell: pwsh
-        run: python scripts/dependency_check.py --module "${{ needs.resolve.outputs.module_name }}" --source-zip "${{ needs.resolve.outputs.source_zip_name }}"
+        run: |
+          python scripts/dependency_check.py --module "${{ needs.resolve.outputs.module_name }}" --source-zip "${{ needs.resolve.outputs.source_zip_name }}"
+          if ("${{ inputs.build_target }}" -eq "service_hub" -and "${{ needs.resolve.outputs.include_sonication }}" -eq "true") {
+            python scripts/dependency_check.py --module "Soni"
+          }
 
       - name: Build selected target
         id: build
@@ -326,4 +330,5 @@ jobs:
             artifacts/build_summary.json
             artifacts/preflight_*.json
             artifacts/contract_audit.json
+            artifacts/sonication/**
           if-no-files-found: warn
