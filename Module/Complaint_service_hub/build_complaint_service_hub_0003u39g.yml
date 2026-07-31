@@ -1,0 +1,84 @@
+name: Build Complaint Service Hub 0003u39g
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build 0003u39g Windows Standalone
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Locate and extract 0003u39g source ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -File -Filter '*.zip' |
+            Where-Object {
+              $_.Name -match 'Complaint_Service_Hub' -and
+              $_.Name -match '0003u39g' -and
+              $_.Name -match 'SOURCE' -and
+              $_.Name -notmatch '(?i)(artifact|distribution|release|built)'
+            } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          if (-not $zip) { throw 'Commit 0003u39g SOURCE ZIP was not found.' }
+
+          $source = Join-Path $env:RUNNER_TEMP 'Complaint_Service_Hub_0003u39g'
+          if (Test-Path $source) { Remove-Item $source -Recurse -Force }
+          New-Item -ItemType Directory -Path $source | Out-Null
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $source -Force
+
+          $buildBat = Get-ChildItem -LiteralPath $source -Recurse -File -Filter 'BUILD_EXE.bat' | Select-Object -First 1
+          if (-not $buildBat) { throw 'BUILD_EXE.bat was not found in the extracted source.' }
+          "PROJECT_ROOT=$($buildBat.Directory.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Project root: $($buildBat.Directory.FullName)"
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build Nuitka standalone package
+        shell: cmd
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: call BUILD_EXE.bat
+
+      - name: Verify standalone artifact
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'dist/Complaint_Service_Hub'
+          $required = @(
+            'Complaint_Service_Hub_Launcher.exe',
+            'Complaint_Service_Hub.exe',
+            'Complaint_Service_Hub_Updater.exe',
+            'version.json',
+            'app_version.json',
+            'manifest.json',
+            'BUILD_INFO.txt'
+          )
+          foreach ($name in $required) {
+            if (-not (Test-Path (Join-Path $root $name))) { throw "Missing artifact: $name" }
+          }
+          $info = Get-Content (Join-Path $root 'BUILD_INFO.txt') -Raw
+          if ($info -notmatch 'BuildMode=standalone') { throw 'Incorrect build mode.' }
+          if ($info -notmatch 'BuildEngine=Nuitka') { throw 'Incorrect build engine.' }
+          if ($info -notmatch 'Build=0003u39g') { throw 'Incorrect build number.' }
+
+      - name: Upload standalone artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Complaint_Service_Hub_0003u39g_Windows_Standalone
+          path: ${{ env.PROJECT_ROOT }}/dist/Complaint_Service_Hub/**
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 30
