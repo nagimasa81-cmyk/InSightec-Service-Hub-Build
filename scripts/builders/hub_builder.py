@@ -43,6 +43,20 @@ class HubBuilder(BaseBuilder):
         selected_modules = list(self.ctx.registry["workflow_selection"]["service_hub_modules"])
         if not self.ctx.include_sonication:
             selected_modules = [name for name in selected_modules if name != "Soni"]
+            # The optional module must disappear from the Hub itself, not merely
+            # from the external assembly phase. Remove its registry entry and
+            # bundled manifest folder so card discovery, search, update checks,
+            # details and ZIP auto-routing cannot expose a non-included tool.
+            tools = config.get("tools", [])
+            if isinstance(tools, list):
+                config["tools"] = [
+                    tool for tool in tools
+                    if not (isinstance(tool, dict) and str(tool.get("id", "")).lower() == "sonication_analysis")
+                ]
+            soni_dir = root / "tools" / "SonicationAnalysis"
+            if soni_dir.exists():
+                import shutil
+                shutil.rmtree(soni_dir)
         config["build_selection"] = {
             "hub_variant": variant,
             "guide_enabled": bool(self.ctx.guide),
@@ -55,7 +69,12 @@ class HubBuilder(BaseBuilder):
         version = _read(version_path)
         version["hub_variant"] = variant
         version["guide_tour"] = "included" if self.ctx.guide else "removed"
-        version["build_selection"] = f"{variant}-{'guide' if self.ctx.guide else 'no-guide'}"
+        version["build_selection"] = f"{variant}-{'guide' if self.ctx.guide else 'no-guide'}-{'soni' if self.ctx.include_sonication else 'no-soni'}"
+        if not self.ctx.include_sonication:
+            for key in ("supported_tools", "included_tools", "tools"):
+                value = version.get(key)
+                if isinstance(value, list):
+                    version[key] = [item for item in value if "sonication" not in str(item).lower()]
         _write(version_path, version)
 
         release_path = root / "release_mode.json"
