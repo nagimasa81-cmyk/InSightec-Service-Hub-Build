@@ -20,10 +20,54 @@ class BaseBuilder:
             raise FileNotFoundError(f"Fixed {label} not found: {path}")
         return path
 
+
+    def _ensure_optional_qt_dependencies(self, root: Path, log: Path) -> None:
+        """Install the matching PySide6 Addons package only when source imports need it.
+
+        pyqtgraph imports QtOpenGL helpers during module initialization on recent
+        releases. PySide6-Essentials alone therefore produces a valid EXE that exits
+        immediately. Keep the package versions aligned with the installed PySide6.
+        """
+        source_text = ""
+        for py in root.rglob("*.py"):
+            if any(part in {".venv", "venv", "site-packages", "build", "dist", "__pycache__"} for part in py.parts):
+                continue
+            try:
+                source_text += py.read_text(encoding="utf-8", errors="ignore")[:250000]
+            except Exception:
+                continue
+        needs_opengl = any(token in source_text for token in ("pyqtgraph", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets"))
+        if not needs_opengl:
+            return
+        probe = run_import_probe = __import__("subprocess").run(
+            [sys.executable, "-c", "import PySide6.QtOpenGL, PySide6.QtOpenGLWidgets"],
+            cwd=str(root), stdout=__import__("subprocess").DEVNULL, stderr=__import__("subprocess").DEVNULL, check=False
+        )
+        if probe.returncode == 0:
+            print("[PASS] PySide6 QtOpenGL runtime is available.")
+            return
+        version_probe = __import__("subprocess").run(
+            [sys.executable, "-c", "import PySide6; print(PySide6.__version__)"],
+            cwd=str(root), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
+        )
+        if version_probe.returncode != 0:
+            raise RuntimeError("Source uses pyqtgraph/QtOpenGL but PySide6 is not installed after requirements resolution")
+        version = version_probe.stdout.strip().splitlines()[-1].strip()
+        package = f"PySide6-Addons=={version}"
+        print(f"[REPAIR] Installing matching optional Qt package: {package}")
+        run([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", package], root, log)
+        verify = __import__("subprocess").run(
+            [sys.executable, "-c", "import PySide6.QtOpenGL, PySide6.QtOpenGLWidgets; print('QtOpenGL dependency check: PASS')"],
+            cwd=str(root), check=False
+        )
+        if verify.returncode != 0:
+            raise RuntimeError(f"QtOpenGL dependency repair failed after installing {package}")
+
     def build(self)->tuple[Path,Path]:
         c=self.ctx; root=c.source_root; log=c.log_path; started=time.time()
         for req in detect_requirements(root):
             run([sys.executable,"-m","pip","install","-r",str(req)],req.parent,log)
+        self._ensure_optional_qt_dependencies(root, log)
 
         cfg=c.build_config
         script=str(cfg.get("build_script") or c.version.get("build_script") or c.module_config.get("build_script") or "")
