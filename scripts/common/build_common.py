@@ -271,14 +271,32 @@ def smoke_test_exe(exe:Path, log:Path, seconds:int=12)->dict:
     if os.name != "nt": return {"status":"skipped_non_windows"}
     env=os.environ.copy(); env.setdefault("QT_LOGGING_RULES","*.debug=false")
     log.parent.mkdir(parents=True,exist_ok=True)
+    result_path=log.parent/"smoke_test_result.json"
+    startup_error=log.parent/"startup_error.log"
+    for stale in (result_path,startup_error):
+        try: stale.unlink()
+        except FileNotFoundError: pass
+    env["INSIGHTEC_SMOKE_TEST"]="1"
+    env["INSIGHTEC_SMOKE_RESULT"]=str(result_path)
+    env["INSIGHTEC_STARTUP_ERROR"]=str(startup_error)
     with log.open("a",encoding="utf-8",errors="replace") as f:
         f.write(f"\n[SMOKE] launching {exe}\n")
         creationflags=getattr(subprocess,"CREATE_NEW_PROCESS_GROUP",0)
         p=subprocess.Popen([str(exe)],cwd=exe.parent,stdout=f,stderr=subprocess.STDOUT,env=env,creationflags=creationflags)
         try:
             rc=p.wait(timeout=seconds)
-            if rc != 0: raise RuntimeError(f"EXE exited during smoke test with code {rc}")
-            return {"status":"exited_cleanly","exit_code":rc,"seconds":seconds}
+            if rc != 0:
+                detail=""
+                if startup_error.is_file():
+                    detail=startup_error.read_text(encoding="utf-8",errors="replace")[-12000:]
+                elif log.is_file():
+                    detail=log.read_text(encoding="utf-8",errors="replace")[-12000:]
+                raise RuntimeError(f"EXE exited during smoke test with code {rc}" + (f"\nStartup diagnostics:\n{detail}" if detail else ""))
+            marker=read_json(result_path) if result_path.is_file() else {}
+            # Applications that support the deterministic probe must write PASS.
+            if marker and marker.get("status") != "pass":
+                raise RuntimeError(f"EXE smoke marker did not report PASS: {marker}")
+            return {"status":"exited_cleanly","exit_code":rc,"seconds":seconds,"marker":marker}
         except subprocess.TimeoutExpired:
             p.terminate()
             try: p.wait(timeout=5)
