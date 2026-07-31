@@ -60,7 +60,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: selected-${{ inputs.build_target }}-${{ inputs.module_name }}-${{ inputs.hub_style }}-${{ inputs.guide_mode }}-${{ github.ref }}
+  group: selected-${{ inputs.build_target }}-${{ inputs.module_name }}-${{ inputs.hub_style }}-${{ inputs.include_sonication }}-${{ inputs.guide_mode }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -121,6 +121,28 @@ jobs:
           source_zip = source_zips[0]
 
           source_sha = hashlib.sha256(source_zip.read_bytes()).hexdigest()
+
+          # A Hub artifact embeds repository module builds. Every selected component
+          # SOURCE ZIP must therefore participate in the completed-build signature.
+          component_hashes = []
+          if target == "service_hub":
+              selected_components = list(registry["workflow_selection"]["service_hub_modules"])
+              if os.environ["INPUT_INCLUDE_SONICATION"] != "include":
+                  selected_components = [name for name in selected_components if name != "Soni"]
+              for component_name in selected_components:
+                  component_dir = root / "Module" / component_name
+                  zips = sorted(
+                      [p for p in component_dir.glob("*.zip") if "SOURCE" in p.name.upper()],
+                      key=lambda p: p.name.lower(),
+                  )
+                  if len(zips) != 1:
+                      names = ", ".join(p.name for p in zips) or "none"
+                      raise SystemExit(
+                          f"Expected exactly one SOURCE ZIP in {component_dir}; "
+                          f"found {len(zips)}: {names}"
+                      )
+                  component_hashes.append((component_name, hashlib.sha256(zips[0].read_bytes()).hexdigest()))
+
           framework_files = [root / "config/module_registry.json"]
           framework_files += sorted((root / "scripts").rglob("*.py"))
           framework_hash = hashlib.sha256()
@@ -142,6 +164,7 @@ jobs:
               hub_variant,
               "guide" if guide_enabled else "no-guide",
               "soni" if include_sonication else "no-soni",
+              *[f"{name}:{digest}" for name, digest in component_hashes],
           ])
           signature = hashlib.sha256(signature_raw.encode()).hexdigest()[:24]
 
@@ -185,7 +208,7 @@ jobs:
           python-version: ${{ needs.resolve.outputs.python_version }}
           cache: pip
           cache-dependency-path: |
-            Module/${{ needs.resolve.outputs.module_name }}/**/*.zip
+            Module/**/*.zip
             config/module_registry.json
 
       - name: Audit required fixed module contracts
@@ -216,7 +239,7 @@ jobs:
             .nuitka-cache
             .module-cache
             .builder-cache
-          key: framework-${{ runner.os }}-${{ needs.resolve.outputs.cache_tag }}-${{ needs.resolve.outputs.module_name }}-${{ hashFiles(format('Module/{0}/*.zip', needs.resolve.outputs.module_name), 'scripts/**/*.py', 'config/module_registry.json') }}
+          key: framework-${{ runner.os }}-${{ needs.resolve.outputs.cache_tag }}-${{ needs.resolve.outputs.module_name }}-${{ hashFiles('Module/**/*.zip', 'scripts/**/*.py', 'config/module_registry.json') }}
           restore-keys: |
             framework-${{ runner.os }}-${{ needs.resolve.outputs.cache_tag }}-${{ needs.resolve.outputs.module_name }}-
             framework-${{ runner.os }}-${{ needs.resolve.outputs.cache_tag }}-
