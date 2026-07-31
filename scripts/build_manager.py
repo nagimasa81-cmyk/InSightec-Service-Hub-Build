@@ -93,6 +93,58 @@ def save_cached_build(signature: str, target: Path, result: dict):
   "created_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"artifact_sha256":result.get("artifact_sha256",""),"summary":result
  })
 
+
+
+def reconcile_sonication_metadata(source_root:Path, diagnostics_dir:Path)->dict:
+ """Normalize Sonication release metadata before invoking its fixed build BAT.
+
+ version.json is the authoritative release record. VERSION and
+ src/common/constants.py are synchronized to it. This prevents a stale file
+ inside an otherwise valid SOURCE ZIP from aborting the complete Hub build.
+ """
+ import re
+ versions=list(source_root.rglob("version.json"))
+ constants=list(source_root.rglob("src/common/constants.py"))
+ version_files=list(source_root.rglob("VERSION"))
+ if len(versions)!=1 or len(constants)!=1 or len(version_files)!=1:
+  raise RuntimeError(
+   "Sonication metadata files must be unique: "
+   f"version.json={len(versions)}, constants.py={len(constants)}, VERSION={len(version_files)}"
+  )
+ version_data=json.loads(versions[0].read_text(encoding="utf-8-sig"))
+ expected_version=str(version_data.get("version","")).strip()
+ expected_commit=str(version_data.get("commit","")).strip()
+ if not expected_version or not expected_commit:
+  raise RuntimeError("Sonication version.json must contain non-empty version and commit")
+ version_before=version_files[0].read_text(encoding="utf-8-sig").strip()
+ constants_text=constants[0].read_text(encoding="utf-8-sig")
+ m_ver=re.search(r'(?m)^APP_VERSION\s*=\s*["\']([^"\']+)["\']',constants_text)
+ m_commit=re.search(r'(?m)^APP_COMMIT\s*=\s*["\']([^"\']+)["\']',constants_text)
+ constants_version_before=m_ver.group(1) if m_ver else ""
+ constants_commit_before=m_commit.group(1) if m_commit else ""
+ if not m_ver or not m_commit:
+  raise RuntimeError("Sonication constants.py must define APP_VERSION and APP_COMMIT")
+ repaired=False
+ if version_before != expected_version:
+  version_files[0].write_text(expected_version+"\n",encoding="utf-8")
+  repaired=True
+ if constants_version_before != expected_version:
+  constants_text=re.sub(r'(?m)^(APP_VERSION\s*=\s*)["\'][^"\']+["\']',lambda m:m.group(1)+repr(expected_version),constants_text,count=1)
+  repaired=True
+ if constants_commit_before != expected_commit:
+  constants_text=re.sub(r'(?m)^(APP_COMMIT\s*=\s*)["\'][^"\']+["\']',lambda m:m.group(1)+repr(expected_commit),constants_text,count=1)
+  repaired=True
+ constants[0].write_text(constants_text,encoding="utf-8")
+ report={
+  "authoritative_file":str(versions[0].relative_to(source_root)).replace("\\","/"),
+  "expected_version":expected_version,"expected_commit":expected_commit,
+  "version_before":version_before,"app_version_before":constants_version_before,
+  "app_commit_before":constants_commit_before,"repaired":repaired,
+ }
+ diagnostics_dir.mkdir(parents=True,exist_ok=True)
+ write_json(diagnostics_dir/"sonication_metadata_reconciliation.json",report)
+ return report
+
 HUB_TOOL_FOLDERS={
  "DO_Analysis":"DOanalysis",
  "Log_explorer":"LogExplorer",
@@ -115,6 +167,8 @@ def _component_context(name,args,reg,workspace_suffix="component"):
  entry=str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
  log=ws/"diagnostics"/"build.log"
  ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module",True)
+ if name == "Soni":
+  reconcile_sonication_metadata(extracted,ws/"diagnostics")
  return ctx
 
 def assemble_hub_tools(hub_root:Path,args,reg)->list[dict]:
@@ -163,6 +217,8 @@ def build_one(name,args,reg):
  artifact = "-".join(x for x in (artifact,mode_tag,soni_tag,guide_tag) if x)
  log=ws/"diagnostics"/"build.log"
  ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,artifact,ver,cfg,args.guide,args.hub_variant,args.include_sonication)
+ if name == "Soni":
+  reconcile_sonication_metadata(extracted,ws/"diagnostics")
  if name == reg["workflow_selection"]["hub_module"]:
   assemble_hub_tools(extracted,args,reg)
  result={"module":name,"source_zip":source.name,"source_sha256":sha256(source),"runtime":runtime,"builder":builder,"engine":engine,"entry_point_requested":entry,"started":started}
