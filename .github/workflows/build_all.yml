@@ -19,8 +19,10 @@ jobs:
           selected=[r['workflow_selection']['hub_module'], *r['workflow_selection']['service_hub_modules']]
           for module_name in selected:
               p=pathlib.Path('Module') / module_name
-              if not p.is_dir() or not list(p.glob('*.zip')):
-                  raise SystemExit(f'Missing SOURCE ZIP for configured module: {module_name}')
+              source_zips=sorted(x for x in p.glob('*.zip') if 'SOURCE' in x.name.upper())
+              if len(source_zips) != 1:
+                  names=', '.join(x.name for x in source_zips) or 'none'
+                  raise SystemExit(f'Expected exactly one SOURCE ZIP for {module_name}; found {len(source_zips)}: {names}')
               m=r['modules'][module_name]
               runtime=m.get('runtime',r['defaults']['runtime'])
               items.append({'module':module_name,'python':r['runtimes'][runtime]['python'],'runtime':runtime})
