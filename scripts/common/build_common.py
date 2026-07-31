@@ -1,5 +1,6 @@
 from __future__ import annotations
 import hashlib, json, os, shutil, subprocess, sys, time, zipfile
+from collections import deque
 from pathlib import Path
 
 def read_json(path: Path) -> dict:
@@ -100,13 +101,32 @@ def detect_entry(root: Path, configured: str="") -> Path:
 
 def run(cmd:list[str], cwd:Path, log:Path, env:dict|None=None):
     log.parent.mkdir(parents=True,exist_ok=True)
-    print("[RUN]", subprocess.list2cmdline(cmd), flush=True)
+    command_text=subprocess.list2cmdline(cmd)
+    print("[RUN]", command_text, flush=True)
+    tail=deque(maxlen=80)
     with log.open("a",encoding="utf-8",errors="replace") as f:
         p=subprocess.Popen(cmd,cwd=cwd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding="utf-8",errors="replace",env=env)
         assert p.stdout
-        for line in p.stdout: print(line,end=""); f.write(line)
+        for line in p.stdout:
+            print(line,end="")
+            f.write(line)
+            tail.append(line.rstrip())
         rc=p.wait()
-    if rc: raise RuntimeError(f"Command failed ({rc}): {cmd}")
+    if rc:
+        useful=[line for line in tail if line.strip()]
+        context="\n".join(useful[-40:])
+        reason=""
+        if any("AssertionError" in line for line in useful):
+            reason="Module source verification assertion failed. Check VERSION, version.json, APP_VERSION and APP_COMMIT consistency."
+        elif any("ModuleNotFoundError" in line for line in useful):
+            reason="A required Python module was not available during the module build."
+        elif any("FileNotFoundError" in line for line in useful):
+            reason="The fixed module build referenced a file that was not present."
+        message=f"Command failed ({rc}): {command_text}"
+        if reason: message += f"\nFailure reason: {reason}"
+        if context: message += f"\nLast build output:\n{context}"
+        message += f"\nFull log: {log}"
+        raise RuntimeError(message)
 
 def locate_payload(root:Path, expected_patterns:list[str]|None=None, output_directories:list[str]|None=None, not_before:float=0)->tuple[Path,Path]:
     excluded=(".venv","venv","site-packages","__pycache__")
