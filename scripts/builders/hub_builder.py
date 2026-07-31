@@ -25,6 +25,7 @@ class HubBuilder(BaseBuilder):
         # Hub tools are assembled from repository Module SOURCE ZIPs by build_manager.
         # Never rebuild stale integrated_sources bundled inside the Hub SOURCE.
         env["INSIGHTEC_EXTERNAL_TOOL_ASSEMBLY"] = "1"
+        env["INSIGHTEC_INCLUDE_SONICATION"] = "1" if self.ctx.include_sonication else "0"
         return env
 
     def prepare_source(self):
