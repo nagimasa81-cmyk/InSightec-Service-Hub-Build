@@ -40,10 +40,14 @@ class HubBuilder(BaseBuilder):
         config["hub_variant"] = variant
         config["startup_page"] = "auto_analyzer" if variant == "zip_drop" else "tools"
         config["guide_tour_enabled"] = bool(self.ctx.guide)
+        selected_modules = list(self.ctx.registry["workflow_selection"]["service_hub_modules"])
+        if not self.ctx.include_sonication:
+            selected_modules = [name for name in selected_modules if name != "Soni"]
         config["build_selection"] = {
             "hub_variant": variant,
             "guide_enabled": bool(self.ctx.guide),
-            "service_hub_modules": self.ctx.registry["workflow_selection"]["service_hub_modules"],
+            "include_sonication": bool(self.ctx.include_sonication),
+            "service_hub_modules": selected_modules,
         }
         _write(config_path, config)
 
@@ -74,7 +78,8 @@ class HubBuilder(BaseBuilder):
             "hub_variant": variant,
             "startup_page": config["startup_page"],
             "guide_enabled": bool(self.ctx.guide),
-            "modules": self.ctx.registry["workflow_selection"]["service_hub_modules"],
+            "include_sonication": bool(self.ctx.include_sonication),
+            "modules": selected_modules,
         })
 
     def build(self):

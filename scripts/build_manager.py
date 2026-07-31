@@ -10,7 +10,7 @@ from builders import BUILDERS
 class Context:
  module:str; module_dir:Path; source_zip:Path; source_root:Path; workspace:Path; output_root:Path; log_path:Path
  registry:dict; module_config:dict; runtime:str; builder_name:str; engine:str; entry_point:str; exe_stem:str
- version:dict; build_config:dict; guide:bool=False; hub_variant:str="card_launcher"
+ version:dict; build_config:dict; guide:bool=False; hub_variant:str="card_launcher"; include_sonication:bool=True
 def load_registry(): return json.loads((ROOT/"config/module_registry.json").read_text(encoding="utf-8"))
 def modules(reg):
  configured=[reg["workflow_selection"]["hub_module"], *reg["workflow_selection"]["standalone_modules"]]
@@ -114,7 +114,7 @@ def _component_context(name,args,reg,workspace_suffix="component"):
  engine=choose_engine(ver,cfg,builder)
  entry=str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
  log=ws/"diagnostics"/"build.log"
- ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module")
+ ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module",True)
  return ctx
 
 def assemble_hub_tools(hub_root:Path,args,reg)->list[dict]:
@@ -125,7 +125,10 @@ def assemble_hub_tools(hub_root:Path,args,reg)->list[dict]:
  results=[]
  tools_root=hub_root/"tools"
  tools_root.mkdir(parents=True,exist_ok=True)
- for name in reg["workflow_selection"]["service_hub_modules"]:
+ selected_modules=list(reg["workflow_selection"]["service_hub_modules"])
+ if not args.include_sonication:
+  selected_modules=[name for name in selected_modules if name != "Soni"]
+ for name in selected_modules:
   ctx=_component_context(name,args,reg)
   started=time.time()
   payload,exe=BUILDERS[ctx.builder_name](ctx).build()
@@ -155,10 +158,11 @@ def build_one(name,args,reg):
  mode_tag=""
  if name == reg["workflow_selection"]["hub_module"]:
   mode_tag = "ZD" if args.hub_variant == "zip_drop" else "CL"
+ soni_tag = "S" if args.include_sonication else "NS"
  guide_tag = "G" if args.guide else "N"
- artifact = "-".join(x for x in (artifact,mode_tag,guide_tag) if x)
+ artifact = "-".join(x for x in (artifact,mode_tag,soni_tag,guide_tag) if x)
  log=ws/"diagnostics"/"build.log"
- ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,artifact,ver,cfg,args.guide,args.hub_variant)
+ ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,artifact,ver,cfg,args.guide,args.hub_variant,args.include_sonication)
  if name == reg["workflow_selection"]["hub_module"]:
   assemble_hub_tools(extracted,args,reg)
  result={"module":name,"source_zip":source.name,"source_sha256":sha256(source),"runtime":runtime,"builder":builder,"engine":engine,"entry_point_requested":entry,"started":started}
@@ -185,7 +189,7 @@ def build_one(name,args,reg):
   raise
  finally: write_json(ws/"diagnostics"/"summary.json",result)
 def main():
- p=argparse.ArgumentParser(); p.add_argument("--module",default=os.getenv("INPUT_MODULE_NAME","")); p.add_argument("--all",action="store_true"); p.add_argument("--source-zip",default=os.getenv("INPUT_SOURCE_ZIP","")); p.add_argument("--guide",action="store_true",default=os.getenv("INPUT_MODULE_GUIDE","").lower()=="true"); p.add_argument("--hub-variant",default=os.getenv("INPUT_HUB_VARIANT","card_launcher")); p.add_argument("--cache-signature",default=os.getenv("INPUT_CACHE_SIGNATURE","")); p.add_argument("--reuse-existing",action="store_true"); p.add_argument("--list",action="store_true"); a=p.parse_args(); reg=load_registry(); available=modules(reg)
+ p=argparse.ArgumentParser(); p.add_argument("--module",default=os.getenv("INPUT_MODULE_NAME","")); p.add_argument("--all",action="store_true"); p.add_argument("--source-zip",default=os.getenv("INPUT_SOURCE_ZIP","")); p.add_argument("--guide",action="store_true",default=os.getenv("INPUT_MODULE_GUIDE","").lower()=="true"); p.add_argument("--hub-variant",default=os.getenv("INPUT_HUB_VARIANT","card_launcher")); p.add_argument("--cache-signature",default=os.getenv("INPUT_CACHE_SIGNATURE","")); p.add_argument("--exclude-sonication",dest="include_sonication",action="store_false",default=os.getenv("INPUT_INCLUDE_SONICATION","true").lower()=="true"); p.add_argument("--reuse-existing",action="store_true"); p.add_argument("--list",action="store_true"); a=p.parse_args(); reg=load_registry(); available=modules(reg)
  if a.list: print("\n".join(available)); return
  selected=available if a.all else [a.module]
  if not selected or not selected[0]: raise SystemExit("--module is required (or use --all)")
