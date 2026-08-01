@@ -197,6 +197,53 @@ class SonicationPipeline:
             raise
         self._copy_diagnostics()
 
+    def _ensure_deterministic_nuitka(self, log: StageLogger):
+        """Reset the shared runner toolchain before the dedicated Sonication build.
+
+        Hub assembly builds several modules in one Python environment. A previous
+        module can install an older Nuitka release. The Sonication BAT requests
+        ``nuitka`` without ``--upgrade``, so pip may keep that older release and
+        produce a frozen EXE that omits PySide6.QtOpenGL. Run 47 proved that
+        Nuitka 4.1.3 packages the current PySide6/pyqtgraph set correctly.
+        """
+        import subprocess
+
+        required = "Nuitka==4.1.3"
+        command = [
+            sys.executable, "-m", "pip", "install",
+            "--disable-pip-version-check", "--upgrade",
+            required, "ordered-set", "zstandard",
+        ]
+        log.write("Resetting Sonication compiler toolchain: " + " ".join(command))
+        completed = subprocess.run(
+            command, cwd=str(self.ctx.source_root), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", check=False,
+        )
+        output = (completed.stdout or "") + (completed.stderr or "")
+        (self.diag_root / "stage2_toolchain_install.log").write_text(output, encoding="utf-8")
+        if completed.returncode != 0:
+            raise RuntimeError(f"Failed to install deterministic Sonication toolchain: {required}")
+
+        probe = subprocess.run(
+            [sys.executable, "-c",
+             "import nuitka, PySide6, PySide6.QtOpenGL, PySide6.QtOpenGLWidgets, pyqtgraph; "
+             "import importlib.metadata as m; "
+             "print('Nuitka=' + m.version('Nuitka')); "
+             "print('PySide6=' + PySide6.__version__); "
+             "print('pyqtgraph=' + pyqtgraph.__version__); "
+             "print('QtOpenGL=' + PySide6.QtOpenGL.__file__); "
+             "print('QtOpenGLWidgets=' + PySide6.QtOpenGLWidgets.__file__)"],
+            cwd=str(self.ctx.source_root), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", check=False,
+        )
+        probe_text = (probe.stdout or "") + (probe.stderr or "")
+        (self.diag_root / "stage2_toolchain_probe.log").write_text(probe_text, encoding="utf-8")
+        if probe.returncode != 0:
+            raise RuntimeError("Sonication toolchain probe failed before compilation")
+        if "Nuitka=4.1.3" not in probe_text:
+            raise RuntimeError("Sonication toolchain version mismatch; expected Nuitka 4.1.3")
+        log.write(probe_text.strip().replace("\n", " | "))
+
     def stage2_build(self):
         stage = "sonication_build"
         started = time.time()
@@ -204,6 +251,7 @@ class SonicationPipeline:
         try:
             with build_stage(stage):
                 self.ctx.build_stage = stage
+                self._ensure_deterministic_nuitka(log)
                 self.ctx.log_path = self.diag_root / "stage2_builder_output.log"
                 log.write(f"Builder: {self.ctx.builder_name}; engine: {self.ctx.engine}")
                 self.payload, self.exe = BUILDERS[self.ctx.builder_name](self.ctx).build()
