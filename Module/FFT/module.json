@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "FFT",
+  "display_name": "FUS Image Explore",
+  "artifact_name": "FUS",
+  "builder": "fft",
+  "runtime": "FFT",
+  "entry_point": "launcher.py",
+  "build_script": "02_BUILD_EXE_NUITKA_CI.bat",
+  "supports_reuse": true,
+  "supports_hub": true,
+  "hub_tool_folder": ""
+}

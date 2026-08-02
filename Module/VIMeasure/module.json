@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "VIMeasure",
+  "display_name": "VIMeasure",
+  "artifact_name": "VI",
+  "builder": "rc8",
+  "runtime": "R5",
+  "entry_point": "VIMeasureAnalyzer.py",
+  "build_script": "01_BUILD_EXE_NUITKA.bat",
+  "supports_reuse": true,
+  "supports_hub": true,
+  "hub_tool_folder": ""
+}

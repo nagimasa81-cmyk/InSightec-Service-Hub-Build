@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "trackerSNR",
+  "display_name": "Tracker SNR",
+  "artifact_name": "SNR",
+  "builder": "do",
+  "runtime": "R5",
+  "entry_point": "TrackerSNR_CLEAN_EXE.py",
+  "build_script": "00_BUILD_EXE_RECOMMENDED_PYINSTALLER.bat",
+  "supports_reuse": true,
+  "supports_hub": true,
+  "hub_tool_folder": ""
+}

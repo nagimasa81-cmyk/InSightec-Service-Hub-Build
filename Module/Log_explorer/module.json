@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "Log_explorer",
+  "display_name": "Log Explorer",
+  "artifact_name": "Log",
+  "builder": "rc8",
+  "runtime": "R6",
+  "entry_point": "LogMergeTool_NoExcel_Main.py",
+  "build_script": "01_BUILD_EXE_NUITKA.bat",
+  "supports_reuse": true,
+  "supports_hub": true,
+  "hub_tool_folder": ""
+}

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "1.7",
   "runtimes": {
     "R5": {
       "python": "3.13",
@@ -41,7 +41,9 @@
       "entry_point": "do_analysis_qt_app.py",
       "icon": "app.ico",
       "artifact_name": "DO",
-      "build_script": "build_exe.bat"
+      "build_script": "build_exe.bat",
+      "supports_reuse": true,
+      "supports_hub": true
     },
     "Log_explorer": {
       "display_name": "Log Explorer",
@@ -50,7 +52,9 @@
       "entry_point": "LogMergeTool_NoExcel_Main.py",
       "icon": "app.ico",
       "artifact_name": "Log",
-      "build_script": "01_BUILD_EXE_NUITKA.bat"
+      "build_script": "01_BUILD_EXE_NUITKA.bat",
+      "supports_reuse": true,
+      "supports_hub": true
     },
     "FFT": {
       "display_name": "FUS Image Explore",
@@ -59,7 +63,9 @@
       "entry_point": "launcher.py",
       "icon": "app.ico",
       "artifact_name": "FUS",
-      "build_script": "02_BUILD_EXE_NUITKA_CI.bat"
+      "build_script": "02_BUILD_EXE_NUITKA_CI.bat",
+      "supports_reuse": true,
+      "supports_hub": true
     },
     "trackerSNR": {
       "display_name": "Tracker SNR",
@@ -68,7 +74,9 @@
       "entry_point": "TrackerSNR_CLEAN_EXE.py",
       "icon": "app.ico",
       "artifact_name": "SNR",
-      "build_script": "00_BUILD_EXE_RECOMMENDED_PYINSTALLER.bat"
+      "build_script": "00_BUILD_EXE_RECOMMENDED_PYINSTALLER.bat",
+      "supports_reuse": true,
+      "supports_hub": true
     },
     "VIMeasure": {
       "display_name": "VIMeasure",
@@ -77,7 +85,9 @@
       "entry_point": "VIMeasureAnalyzer.py",
       "icon": "app.ico",
       "artifact_name": "VI",
-      "build_script": "01_BUILD_EXE_NUITKA.bat"
+      "build_script": "01_BUILD_EXE_NUITKA.bat",
+      "supports_reuse": true,
+      "supports_hub": true
     },
     "Soni": {
       "display_name": "Sonication Analysis",
@@ -86,7 +96,9 @@
       "entry_point": "main.py",
       "icon": "app.ico",
       "artifact_name": "Soni",
-      "build_script": "01_BUILD_EXE_NUITKA_CI.bat"
+      "build_script": "01_BUILD_EXE_NUITKA_CI.bat",
+      "supports_reuse": true,
+      "supports_hub": true
     },
     "InSightec_Service_hub": {
       "display_name": "InSightec APAC Service Hub",
@@ -95,7 +107,21 @@
       "entry_point": "InSightecServiceHub.py",
       "icon": "app.ico",
       "artifact_name": "Hub",
-      "build_script": "01_BUILD_EXE.bat"
+      "build_script": "01_BUILD_EXE.bat",
+      "supports_reuse": true,
+      "supports_hub": false
+    },
+    "Complaint_service_hub": {
+      "display_name": "Complaint Service Hub",
+      "builder": "rc8",
+      "runtime": "R6",
+      "entry_point": "main.py",
+      "icon": "app.ico",
+      "artifact_name": "Complaint",
+      "build_script": "01_BUILD_EXE_NUITKA_CI.bat",
+      "supports_reuse": true,
+      "supports_hub": true,
+      "hub_tool_folder": "ComplaintServiceHub"
     }
   },
   "workflow_selection": {
@@ -110,6 +136,7 @@
     },
     "default_build_mode": "reuse_existing",
     "standalone_modules": [
+      "Complaint_service_hub",
       "DO_Analysis",
       "Log_explorer",
       "FFT",
@@ -118,6 +145,7 @@
       "Soni"
     ],
     "service_hub_modules": [
+      "Complaint_service_hub",
       "DO_Analysis",
       "Log_explorer",
       "FFT",
@@ -131,7 +159,18 @@
       "FFT": "FUS Image Explore",
       "trackerSNR": "Tracker SNR",
       "VIMeasure": "VIMeasure",
-      "Soni": "Sonication Analysis"
+      "Soni": "Sonication Analysis",
+      "Complaint_service_hub": "Complaint Service Hub"
+    },
+    "sonication_selection": {
+      "include": true,
+      "exclude": false,
+      "default": "include"
+    },
+    "complaint_selection": {
+      "include": true,
+      "exclude": false,
+      "default": "include"
     }
   }
 }

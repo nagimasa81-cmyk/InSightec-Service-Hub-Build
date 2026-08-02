@@ -1,0 +1,90 @@
+{
+  "scope": [
+    "InSightec_Service_hub",
+    "DO_Analysis",
+    "Log_explorer",
+    "FFT",
+    "trackerSNR",
+    "VIMeasure",
+    "Soni"
+  ],
+  "results": [
+    {
+      "module": "InSightec_Service_hub",
+      "status": "PASS",
+      "source_zip": "InSightec_APAC_Service_Hub_Commit_0031_RC8_8_SINGLE_YML_VARIANT_GUIDE_SOURCE.zip",
+      "contract": "insightec_build_contract.json",
+      "build_script": "01_BUILD_EXE.bat",
+      "entry_point": "InSightecServiceHub.py",
+      "runtime": "R6",
+      "python": "3.13",
+      "details": []
+    },
+    {
+      "module": "DO_Analysis",
+      "status": "PASS",
+      "source_zip": "DO_Analysis_RC7_2_NATIVE_HANDOFF_SOURCE.zip",
+      "contract": "insightec_build_contract.json",
+      "build_script": "build_exe.bat",
+      "entry_point": "do_analysis_qt_app.py",
+      "runtime": "R5",
+      "python": "3.13",
+      "details": []
+    },
+    {
+      "module": "Log_explorer",
+      "status": "PASS",
+      "source_zip": "LogExplorer_RC8_8_COMMIT0072_2SHOW_WS_FILTER_SOURCE.zip",
+      "contract": "insightec_build_contract.json",
+      "build_script": "01_BUILD_EXE_NUITKA.bat",
+      "entry_point": "LogMergeTool_NoExcel_Main.py",
+      "runtime": "R6",
+      "python": "3.13",
+      "details": []
+    },
+    {
+      "module": "FFT",
+      "status": "PASS",
+      "source_zip": "FUS_Image_Explore_RC8_6_COMMIT0124_RELEASE_GUIDE_SUPPRESSION_SOURCE.zip",
+      "contract": "insightec_build_contract.json",
+      "build_script": "02_BUILD_EXE_NUITKA_CI.bat",
+      "entry_point": "launcher.py",
+      "runtime": "FFT",
+      "python": "3.13",
+      "details": []
+    },
+    {
+      "module": "trackerSNR",
+      "status": "PASS",
+      "source_zip": "TrackerSNR_RC7_2_NATIVE_HANDOFF_SOURCE.zip",
+      "contract": "insightec_build_contract.json",
+      "build_script": "00_BUILD_EXE_RECOMMENDED_PYINSTALLER.bat",
+      "entry_point": "TrackerSNR_CLEAN_EXE.py",
+      "runtime": "R5",
+      "python": "3.13",
+      "details": []
+    },
+    {
+      "module": "VIMeasure",
+      "status": "PASS",
+      "source_zip": "VIMeasure_RC7_9_CONTENT_HANDOFF_FIX_SOURCE.zip",
+      "contract": "VIMeasureAnalyzer_Ver7_EXE/insightec_build_contract.json",
+      "build_script": "VIMeasureAnalyzer_Ver7_EXE/01_BUILD_EXE_NUITKA.bat",
+      "entry_point": "VIMeasureAnalyzer_Ver7_EXE/VIMeasureAnalyzer.py",
+      "runtime": "R5",
+      "python": "3.13",
+      "details": []
+    },
+    {
+      "module": "Soni",
+      "status": "PASS",
+      "source_zip": "Sonication_Analysis_RC8_8_R0015_HUB_AUTOLOAD_FIX_SOURCE.zip",
+      "contract": "r0013_src/insightec_build_contract.json",
+      "build_script": "r0013_src/01_BUILD_EXE_NUITKA_CI.bat",
+      "entry_point": "r0013_src/main.py",
+      "runtime": "R6",
+      "python": "3.13",
+      "details": []
+    }
+  ]
+}

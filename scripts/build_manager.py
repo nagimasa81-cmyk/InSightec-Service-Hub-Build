@@ -11,7 +11,7 @@ from sonication_pipeline import SonicationPipeline, build_stage
 class Context:
  module:str; module_dir:Path; source_zip:Path; source_root:Path; workspace:Path; output_root:Path; log_path:Path
  registry:dict; module_config:dict; runtime:str; builder_name:str; engine:str; entry_point:str; exe_stem:str
- version:dict; build_config:dict; guide:bool=False; hub_variant:str="card_launcher"; include_sonication:bool=True; build_stage:str=""
+ version:dict; build_config:dict; guide:bool=False; hub_variant:str="card_launcher"; include_sonication:bool=True; include_complaint:bool=True; build_stage:str=""
 def load_registry(): return json.loads((ROOT/"config/module_registry.json").read_text(encoding="utf-8"))
 def modules(reg):
  configured=[reg["workflow_selection"]["hub_module"], *reg["workflow_selection"]["standalone_modules"]]
@@ -147,6 +147,7 @@ def reconcile_sonication_metadata(source_root:Path, diagnostics_dir:Path)->dict:
  return report
 
 HUB_TOOL_FOLDERS={
+ "Complaint_service_hub":"ComplaintServiceHub",
  "DO_Analysis":"DOanalysis",
  "Log_explorer":"LogExplorer",
  "FFT":"FUSImageExplore",
@@ -167,10 +168,31 @@ def _component_context(name,args,reg,workspace_suffix="component"):
  engine=choose_engine(ver,cfg,builder)
  entry=str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
  log=ws/"diagnostics"/"build.log"
- ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module",True)
+ ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module",True,True)
  if name == "Soni":
   reconcile_sonication_metadata(extracted,ws/"diagnostics")
  return ctx
+
+MODULE_CACHE_ROOT=ROOT/".module-cache"/"verified-payloads"
+
+def _module_signature(ctx:Context)->str:
+ raw="|".join([ctx.module,sha256(ctx.source_zip),ctx.runtime,ctx.builder_name,ctx.engine,str(ctx.module_config.get("build_script") or ""),"module-cache-v1"])
+ import hashlib
+ return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+def _restore_module_payload(ctx:Context):
+ sig=_module_signature(ctx); cdir=MODULE_CACHE_ROOT/ctx.module/sig; meta=cdir/"metadata.json"; payload=cdir/"payload"
+ if not meta.is_file() or not payload.is_dir(): return None
+ data=json.loads(meta.read_text(encoding="utf-8")); exe=payload/data.get("exe_name","")
+ if not exe.is_file(): return None
+ return payload,exe,sig
+
+def _save_module_payload(ctx:Context,payload:Path,exe:Path):
+ sig=_module_signature(ctx); cdir=MODULE_CACHE_ROOT/ctx.module/sig
+ if cdir.exists(): shutil.rmtree(cdir,ignore_errors=True)
+ copy_payload(payload,cdir/"payload")
+ write_json(cdir/"metadata.json",{"module":ctx.module,"signature":sig,"source_sha256":sha256(ctx.source_zip),"exe_name":exe.name,"verified":True})
+ return sig
 
 def assemble_hub_tools(hub_root:Path,args,reg,hub_ctx:Context)->tuple[list[dict],SonicationPipeline|None]:
  """Build repository modules and integrate only verified payloads.
@@ -183,13 +205,20 @@ def assemble_hub_tools(hub_root:Path,args,reg,hub_ctx:Context)->tuple[list[dict]
  tools_root.mkdir(parents=True,exist_ok=True)
  selected_modules=list(reg["workflow_selection"]["service_hub_modules"])
  selected_modules=[name for name in selected_modules if name != "Soni"]
+ if not args.include_complaint:
+  selected_modules=[name for name in selected_modules if name != "Complaint_service_hub"]
  for name in selected_modules:
   ctx=_component_context(name,args,reg)
-  started=time.time()
-  payload,exe=BUILDERS[ctx.builder_name](ctx).build()
-  qt_deploy=deploy_qt_runtime(payload,exe,ctx.source_root,ctx.workspace/"diagnostics"/"qt_deploy.log")
-  verify_payload(payload,exe,ctx.source_root)
-  smoke_test_exe(exe,ctx.workspace/"diagnostics"/"smoke_test.log",seconds=12)
+  started=time.time(); reused=False
+  cached=_restore_module_payload(ctx) if args.reuse_existing and bool(ctx.module_config.get("supports_reuse",True)) else None
+  if cached:
+   payload,exe,module_signature=cached; qt_deploy={"status":"reused_verified_payload"}; reused=True
+  else:
+   payload,exe=BUILDERS[ctx.builder_name](ctx).build()
+   qt_deploy=deploy_qt_runtime(payload,exe,ctx.source_root,ctx.workspace/"diagnostics"/"qt_deploy.log")
+   verify_payload(payload,exe,ctx.source_root)
+   smoke_test_exe(exe,ctx.workspace/"diagnostics"/"smoke_test.log",seconds=12)
+   module_signature=_save_module_payload(ctx,payload,exe)
   target=tools_root/HUB_TOOL_FOLDERS[name]
   preserved={}
   if target.is_dir():
@@ -198,16 +227,24 @@ def assemble_hub_tools(hub_root:Path,args,reg,hub_ctx:Context)->tuple[list[dict]
     if q.is_file(): preserved[n]=q.read_bytes()
   copy_payload(payload,target)
   for n,data in preserved.items(): (target/n).write_bytes(data)
-  results.append({"module":name,"exe":exe.name,"target":str(target.relative_to(hub_root)),"qt_deploy":qt_deploy,"seconds":round(time.time()-started,2)})
+  results.append({"module":name,"exe":exe.name,"target":str(target.relative_to(hub_root)),"qt_deploy":qt_deploy,"reused":reused,"module_signature":module_signature,"seconds":round(time.time()-started,2)})
 
  pipeline=None
  if args.include_sonication:
   soni_ctx=_component_context("Soni",args,reg)
+  cached=_restore_module_payload(soni_ctx) if args.reuse_existing else None
   pipeline=SonicationPipeline(hub_ctx,soni_ctx,hub_root)
   try:
-   pipeline.stage1_source_validation()
-   pipeline.stage2_build()
-   pipeline.stage3_smoke()
+   if cached:
+    pipeline.payload,pipeline.exe,module_signature=cached
+    pipeline.mark_stage(1,"source_validation","reused",{"module_signature":module_signature})
+    pipeline.mark_stage(2,"sonication_build","reused",{"payload":str(pipeline.payload)})
+    pipeline.mark_stage(3,"sonication_smoke","reused",{"verified_cache":True})
+   else:
+    pipeline.stage1_source_validation()
+    pipeline.stage2_build()
+    pipeline.stage3_smoke()
+    module_signature=_save_module_payload(soni_ctx,pipeline.payload,pipeline.exe)
    target=tools_root/HUB_TOOL_FOLDERS["Soni"]
    preserved={}
    if target.is_dir():
@@ -215,7 +252,7 @@ def assemble_hub_tools(hub_root:Path,args,reg,hub_ctx:Context)->tuple[list[dict]
      q=target/n
      if q.is_file(): preserved[n]=q.read_bytes()
    pipeline.stage4_integrate(target,preserved)
-   results.append({"module":"Soni","exe":pipeline.exe.name,"target":str(target.relative_to(hub_root)),"pipeline":"dedicated_v1"})
+   results.append({"module":"Soni","exe":pipeline.exe.name,"target":str(target.relative_to(hub_root)),"pipeline":"dedicated_v1","reused":bool(cached),"module_signature":module_signature})
   except Exception as exc:
    pipeline.mark_stage(5,"hub_build","skipped",{"reason":"Sonication stage failed","error":f"{type(exc).__name__}: {exc}"})
    pipeline.mark_stage(6,"hub_smoke","skipped",{"reason":"Sonication stage failed"})
@@ -225,7 +262,11 @@ def assemble_hub_tools(hub_root:Path,args,reg,hub_ctx:Context)->tuple[list[dict]
   target=tools_root/HUB_TOOL_FOLDERS["Soni"]
   if target.exists(): shutil.rmtree(target,ignore_errors=True)
 
- write_json(hub_root/"HUB_TOOL_ASSEMBLY.json",{"schema":"insightec.hub.repository-assembly.v2","include_sonication":bool(args.include_sonication),"tools":results})
+ if not args.include_complaint:
+  complaint_target=tools_root/HUB_TOOL_FOLDERS["Complaint_service_hub"]
+  if complaint_target.exists(): shutil.rmtree(complaint_target,ignore_errors=True)
+
+ write_json(hub_root/"HUB_TOOL_ASSEMBLY.json",{"schema":"insightec.hub.repository-assembly.v3","include_sonication":bool(args.include_sonication),"include_complaint":bool(args.include_complaint),"tools":results})
  return results,pipeline
 
 def build_one(name,args,reg):
@@ -240,12 +281,13 @@ def build_one(name,args,reg):
  if name == reg["workflow_selection"]["hub_module"]:
   mode_tag = "ZD" if args.hub_variant == "zip_drop" else "CL"
  soni_tag = "S" if args.include_sonication else "NS"
+ complaint_tag = "C" if args.include_complaint else "NC"
  guide_tag = "G" if args.guide else "N"
- artifact = "-".join(x for x in (artifact,mode_tag,soni_tag,guide_tag) if x)
+ artifact = "-".join(x for x in (artifact,mode_tag,soni_tag,complaint_tag,guide_tag) if x)
  log=ws/"diagnostics"/"build.log"
- ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,artifact,ver,cfg,args.guide,args.hub_variant,args.include_sonication,"")
+ ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,artifact,ver,cfg,args.guide,args.hub_variant,args.include_sonication,args.include_complaint,"")
  pipeline=None
- result={"module":name,"source_zip":source.name,"source_sha256":sha256(source),"runtime":runtime,"builder":builder,"engine":engine,"entry_point_requested":entry,"started":started,"include_sonication":bool(args.include_sonication)}
+ result={"module":name,"source_zip":source.name,"source_sha256":sha256(source),"runtime":runtime,"builder":builder,"engine":engine,"entry_point_requested":entry,"started":started,"include_sonication":bool(args.include_sonication),"include_complaint":bool(args.include_complaint)}
  try:
   if name == "Soni":
    reconcile_sonication_metadata(extracted,ws/"diagnostics")
@@ -277,7 +319,7 @@ def build_one(name,args,reg):
   release=ROOT/"artifacts"/name
   copy_payload(payload,release)
   vv=version_value(ver,source.name)
-  version_json={"module":name,"display_name":mc.get("display_name",name),"version":vv,"runtime":runtime,"builder":builder,"engine":engine,"source_zip":source.name,"source_sha256":result["source_sha256"],"executable":exe.name,"built_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"include_sonication":bool(args.include_sonication)}
+  version_json={"module":name,"display_name":mc.get("display_name",name),"version":vv,"runtime":runtime,"builder":builder,"engine":engine,"source_zip":source.name,"source_sha256":result["source_sha256"],"executable":exe.name,"built_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"include_sonication":bool(args.include_sonication),"include_complaint":bool(args.include_complaint)}
   write_json(release/"version.json",version_json)
   manifest={**version_json,"files":[{"path":str(p.relative_to(release)).replace("\\","/"),"size":p.stat().st_size,"sha256":sha256(p)} for p in release.rglob("*") if p.is_file()]}
   write_json(release/"manifest.json",manifest)
@@ -302,8 +344,14 @@ def build_one(name,args,reg):
  finally: write_json(ws/"diagnostics"/"summary.json",result)
 
 def main():
- p=argparse.ArgumentParser(); p.add_argument("--module",default=os.getenv("INPUT_MODULE_NAME","")); p.add_argument("--all",action="store_true"); p.add_argument("--source-zip",default=os.getenv("INPUT_SOURCE_ZIP","")); p.add_argument("--guide",action="store_true",default=os.getenv("INPUT_MODULE_GUIDE","").lower()=="true"); p.add_argument("--hub-variant",default=os.getenv("INPUT_HUB_VARIANT","card_launcher")); p.add_argument("--cache-signature",default=os.getenv("INPUT_CACHE_SIGNATURE","")); p.add_argument("--exclude-sonication",dest="include_sonication",action="store_false",default=os.getenv("INPUT_INCLUDE_SONICATION","true").lower()=="true"); p.add_argument("--reuse-existing",action="store_true"); p.add_argument("--list",action="store_true"); a=p.parse_args(); reg=load_registry(); available=modules(reg)
+ p=argparse.ArgumentParser(); p.add_argument("--module",default=os.getenv("INPUT_MODULE_NAME","")); p.add_argument("--all",action="store_true"); p.add_argument("--source-zip",default=os.getenv("INPUT_SOURCE_ZIP","")); p.add_argument("--guide",action="store_true",default=os.getenv("INPUT_MODULE_GUIDE","").lower()=="true"); p.add_argument("--hub-variant",default=os.getenv("INPUT_HUB_VARIANT","card_launcher")); p.add_argument("--cache-signature",default=os.getenv("INPUT_CACHE_SIGNATURE","")); p.add_argument("--exclude-sonication",dest="include_sonication",action="store_false",default=os.getenv("INPUT_INCLUDE_SONICATION","true").lower()=="true"); p.add_argument("--exclude-complaint",dest="include_complaint",action="store_false",default=os.getenv("INPUT_INCLUDE_COMPLAINT","true").lower()=="true"); p.add_argument("--reuse-existing",action="store_true"); p.add_argument("--list",action="store_true"); a=p.parse_args(); reg=load_registry(); available=modules(reg)
  if a.list: print("\n".join(available)); return
+ # Safety normalization: zip_drop is intentionally analyzer-only. Even when
+ # build_manager is called outside build_selected.yml, it must force Complaint
+ # exclusion and guide/tour removal before cache lookup, assembly, and Hub build.
+ if a.module == "InSightec_Service_hub" and a.hub_variant == "zip_drop":
+  a.guide = False
+  a.include_complaint = False
  selected=available if a.all else [a.module]
  if not selected or not selected[0]: raise SystemExit("--module is required (or use --all)")
  summary=[]; failed=[]

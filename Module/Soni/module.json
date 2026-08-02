@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "Soni",
+  "display_name": "Sonication Analysis",
+  "artifact_name": "Soni",
+  "builder": "rc8",
+  "runtime": "R6",
+  "entry_point": "main.py",
+  "build_script": "01_BUILD_EXE_NUITKA_CI.bat",
+  "supports_reuse": true,
+  "supports_hub": true,
+  "hub_tool_folder": ""
+}

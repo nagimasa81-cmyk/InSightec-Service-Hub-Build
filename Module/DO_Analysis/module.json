@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "DO_Analysis",
+  "display_name": "DO Analysis",
+  "artifact_name": "DO",
+  "builder": "do",
+  "runtime": "R5",
+  "entry_point": "do_analysis_qt_app.py",
+  "build_script": "build_exe.bat",
+  "supports_reuse": true,
+  "supports_hub": true,
+  "hub_tool_folder": ""
+}

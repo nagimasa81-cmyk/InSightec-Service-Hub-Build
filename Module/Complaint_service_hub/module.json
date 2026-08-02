@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "Complaint_service_hub",
+  "display_name": "Complaint Service Hub",
+  "artifact_name": "Complaint",
+  "builder": "rc8",
+  "runtime": "R6",
+  "entry_point": "main.py",
+  "build_script": "01_BUILD_EXE_NUITKA_CI.bat",
+  "supports_reuse": true,
+  "supports_hub": true,
+  "hub_tool_folder": "ComplaintServiceHub"
+}

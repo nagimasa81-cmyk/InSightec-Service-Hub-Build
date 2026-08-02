@@ -1,0 +1,76 @@
+{
+  "modules": [
+    {
+      "id": "Complaint_service_hub",
+      "display_name": "Complaint Service Hub",
+      "source_zips": [
+        "Complaint_Service_Hub_v0_5_Alpha_Commit_0003u39c_SALESFORCE_WORKFLOW_REPLY_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": true
+    },
+    {
+      "id": "DO_Analysis",
+      "display_name": "DO Analysis",
+      "source_zips": [
+        "DO_Analysis_RC7_2_NATIVE_HANDOFF_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": true
+    },
+    {
+      "id": "FFT",
+      "display_name": "FUS Image Explore",
+      "source_zips": [
+        "FUS_Image_Explore_RC8_6_COMMIT0124_RELEASE_GUIDE_SUPPRESSION_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": true
+    },
+    {
+      "id": "InSightec_Service_hub",
+      "display_name": "InSightec APAC Service Hub",
+      "source_zips": [
+        "InSightec_APAC_Service_Hub_Commit_0047_SONICATION_PIPELINE_REFACTORING_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": false
+    },
+    {
+      "id": "Log_explorer",
+      "display_name": "Log Explorer",
+      "source_zips": [
+        "LogExplorer_RC8_8_COMMIT0073_CSA_ERR_LOAD_LOGS_FIX_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": true
+    },
+    {
+      "id": "Soni",
+      "display_name": "Sonication Analysis",
+      "source_zips": [
+        "Sonication_Analysis_RC8_8_R0015_HUB_AUTOLOAD_FIX_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": true
+    },
+    {
+      "id": "trackerSNR",
+      "display_name": "Tracker SNR",
+      "source_zips": [
+        "TrackerSNR_RC7_2_NATIVE_HANDOFF_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": true
+    },
+    {
+      "id": "VIMeasure",
+      "display_name": "VIMeasure",
+      "source_zips": [
+        "VIMeasure_RC7_9_CONTENT_HANDOFF_FIX_SOURCE.zip"
+      ],
+      "supports_reuse": true,
+      "supports_hub": true
+    }
+  ]
+}

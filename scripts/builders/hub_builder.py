@@ -26,6 +26,7 @@ class HubBuilder(BaseBuilder):
         # Never rebuild stale integrated_sources bundled inside the Hub SOURCE.
         env["INSIGHTEC_EXTERNAL_TOOL_ASSEMBLY"] = "1"
         env["INSIGHTEC_INCLUDE_SONICATION"] = "1" if self.ctx.include_sonication else "0"
+        env["INSIGHTEC_INCLUDE_COMPLAINT"] = "1" if self.ctx.include_complaint else "0"
         env["INSIGHTEC_BUILD_STAGE"] = str(getattr(self.ctx, "build_stage", "hub_build") or "hub_build")
         return env
 
@@ -34,6 +35,12 @@ class HubBuilder(BaseBuilder):
         variant = self.ctx.hub_variant
         if variant not in {"zip_drop", "card_launcher"}:
             raise ValueError(f"Unsupported Hub variant: {variant}")
+
+        # Defense in depth for direct/legacy invocations. ZIP-drop releases are
+        # analyzer-only: force guides off and Complaint completely absent.
+        if variant == "zip_drop":
+            self.ctx.guide = False
+            self.ctx.include_complaint = False
 
         config_path = root / "config.json"
         if not config_path.is_file():
@@ -59,10 +66,26 @@ class HubBuilder(BaseBuilder):
             if soni_dir.exists():
                 import shutil
                 shutil.rmtree(soni_dir)
+        if not self.ctx.include_complaint:
+            selected_modules = [name for name in selected_modules if name != "Complaint_service_hub"]
+            # Exclude means fully absent from the released Hub: no payload folder,
+            # no card/tool registry record, no update/search routing, and no name.
+            complaint_tokens = ("complaint_service_hub", "complaintservicehub", "complaint service hub")
+            tools = config.get("tools", [])
+            if isinstance(tools, list):
+                config["tools"] = [
+                    tool for tool in tools
+                    if not any(token in json.dumps(tool, ensure_ascii=False).lower() for token in complaint_tokens)
+                ]
+            complaint_dir = root / "tools" / "ComplaintServiceHub"
+            if complaint_dir.exists():
+                import shutil
+                shutil.rmtree(complaint_dir)
         config["build_selection"] = {
             "hub_variant": variant,
             "guide_enabled": bool(self.ctx.guide),
             "include_sonication": bool(self.ctx.include_sonication),
+            "include_complaint": bool(self.ctx.include_complaint),
             "service_hub_modules": selected_modules,
         }
         _write(config_path, config)
@@ -71,12 +94,22 @@ class HubBuilder(BaseBuilder):
         version = _read(version_path)
         version["hub_variant"] = variant
         version["guide_tour"] = "included" if self.ctx.guide else "removed"
-        version["build_selection"] = f"{variant}-{'guide' if self.ctx.guide else 'no-guide'}-{'soni' if self.ctx.include_sonication else 'no-soni'}"
+        version["build_selection"] = f"{variant}-{'guide' if self.ctx.guide else 'no-guide'}-{'soni' if self.ctx.include_sonication else 'no-soni'}-{'complaint' if self.ctx.include_complaint else 'no-complaint'}"
         if not self.ctx.include_sonication:
             for key in ("supported_tools", "included_tools", "tools"):
                 value = version.get(key)
                 if isinstance(value, list):
                     version[key] = [item for item in value if "sonication" not in str(item).lower()]
+        if not self.ctx.include_complaint:
+            complaint_tokens = ("complaint_service_hub", "complaintservicehub", "complaint service hub")
+            for key in ("supported_tools", "included_tools", "tools", "modules"):
+                value = version.get(key)
+                if isinstance(value, list):
+                    version[key] = [
+                        item for item in value
+                        if not any(token in str(item).lower() for token in complaint_tokens)
+                    ]
+        version["include_complaint"] = bool(self.ctx.include_complaint)
         _write(version_path, version)
 
         release_path = root / "release_mode.json"
@@ -100,6 +133,7 @@ class HubBuilder(BaseBuilder):
             "startup_page": config["startup_page"],
             "guide_enabled": bool(self.ctx.guide),
             "include_sonication": bool(self.ctx.include_sonication),
+            "include_complaint": bool(self.ctx.include_complaint),
             "modules": selected_modules,
         })
 

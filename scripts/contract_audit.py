@@ -117,20 +117,20 @@ def audit(module:str)->Result:
         hard=[x for x in d if not x.startswith('Service Hub explicit')]
         return Result(module,'PASS' if not hard else 'FAIL',z.name,contract_label,str(bat.relative_to(root)),str(ep.relative_to(root)),runtime,py,d)
 
-def selected_modules(target:str, selected:str, exclude_sonication:bool=False)->list[str]:
+def selected_modules(target:str, selected:str, exclude_sonication:bool=False, exclude_complaint:bool=False)->list[str]:
     scope=REG.get('workflow_selection',{})
     if target=='module': return [selected]
     if target=='service_hub':
         items=[scope['hub_module'], *scope.get('service_hub_modules',[])]
-        return [m for m in items if not (exclude_sonication and m=='Soni')]
+        return [m for m in items if not (exclude_sonication and m=='Soni') and not (exclude_complaint and m=='Complaint_service_hub')]
     if target=='all': return [scope['hub_module'], *scope.get('standalone_modules',[])]
     raise ValueError(f'Unknown target: {target}')
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--module',action='append'); ap.add_argument('--target',choices=['module','service_hub','all']); ap.add_argument('--selected-module',default=''); ap.add_argument('--exclude-sonication',action='store_true'); ap.add_argument('--all',action='store_true'); ap.add_argument('--report',default='artifacts/contract_audit.json'); args=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--module',action='append'); ap.add_argument('--target',choices=['module','service_hub','all']); ap.add_argument('--selected-module',default=''); ap.add_argument('--exclude-sonication',action='store_true'); ap.add_argument('--exclude-complaint',action='store_true'); ap.add_argument('--all',action='store_true'); ap.add_argument('--report',default='artifacts/contract_audit.json'); args=ap.parse_args()
     if args.module: modules=args.module
-    elif args.target: modules=selected_modules(args.target,args.selected_module,args.exclude_sonication)
-    elif args.all: modules=selected_modules('all','',args.exclude_sonication)
+    elif args.target: modules=selected_modules(args.target,args.selected_module,args.exclude_sonication,args.exclude_complaint)
+    elif args.all: modules=selected_modules('all','',args.exclude_sonication,args.exclude_complaint)
     else: raise SystemExit('Specify --module, --target, or --all')
     modules=list(dict.fromkeys(m for m in modules if m))
     results=[audit(m) for m in modules]
