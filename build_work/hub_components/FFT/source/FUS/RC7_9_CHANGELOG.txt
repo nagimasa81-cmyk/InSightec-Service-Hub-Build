@@ -1,0 +1,5 @@
+RC7.9
+- Release mode is now honored from release_mode.json in packaged EXE runtime; startup Guide/Tour stays disabled.
+- Hub handoff imports always finish on Image Workspace instead of Tracker Signal.
+- slice_index is initialized before RAW/DICOM handlers to prevent raw display AttributeError.
+- First imported RAW/DICOM remains visible in Image Workspace for Hub launches.

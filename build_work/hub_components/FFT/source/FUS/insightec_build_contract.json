@@ -1,0 +1,61 @@
+{
+  "module_id": "FUSImageExplore",
+  "module_folder": "FFT",
+  "release_sequence": 86,
+  "source_version": "0.0.0-alpha-rc8.6",
+  "root_marker": "launcher.py",
+  "external_tool_assembly": false,
+  "guide_runtime": false,
+  "contract_schema": "insightec-build-contract/v1",
+  "contract_version": 12,
+  "release_mode": {
+    "environment_variable": "INSIGHTEC_RELEASE_MODE",
+    "value": "1",
+    "guide_tour_enabled": false
+  },
+  "build": {
+    "mode": "bat",
+    "file": "02_BUILD_EXE_NUITKA_CI.bat",
+    "forbidden_tokens": [],
+    "expected_exe_patterns": [
+      "MR_Image_Explorer_RC1.exe"
+    ],
+    "output_directories": [
+      "dist"
+    ],
+    "python_import_probe": [
+      "pydicom",
+      "pylibjpeg",
+      "libjpeg",
+      "openjpeg",
+      "PySide6.QtOpenGL",
+      "PySide6.QtOpenGLWidgets"
+    ],
+    "forbidden_nuitka_packages": [
+      "pylibjpeg_libjpeg",
+      "pylibjpeg_openjpeg",
+      "pylibjpeg.libjpeg",
+      "pylibjpeg.openjpeg"
+    ],
+    "required_nuitka_modules": [
+      "PySide6.QtOpenGL",
+      "PySide6.QtOpenGLWidgets"
+    ],
+    "smoke_test": {
+      "environment": {
+        "MRIE_STARTUP_SMOKE_TEST": "1"
+      },
+      "timeout_seconds": 20,
+      "expected_exit_code": 0
+    }
+  },
+  "ci_safe_build": true,
+  "preflight_profile": "strong-v6-qt-runtime-and-smoke",
+  "handoff": {
+    "schema": "insightec.auto-analysis.handoff.v1",
+    "argv": "--handoff <json>",
+    "environment": "INSIGHTEC_HANDOFF",
+    "native_receiver": true,
+    "auto_load": true
+  }
+}

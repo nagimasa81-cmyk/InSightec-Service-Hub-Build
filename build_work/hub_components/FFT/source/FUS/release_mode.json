@@ -1,0 +1,8 @@
+{
+  "release_mode_supported": true,
+  "environment_variable": "INSIGHTEC_RELEASE_MODE",
+  "release_value": "1",
+  "release_mode": true,
+  "guide_tour_enabled_in_release": false,
+  "profile": "hub-release-no-guide"
+}

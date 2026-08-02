@@ -1,0 +1,7 @@
+RC8.6 Commit0124 — Deterministic Release Guide Suppression
+
+- Standard and Hub builds default to release mode with startup guide/tour disabled.
+- Guide-enabled individual builds remain available with INSIGHTEC_RELEASE_MODE=0.
+- Build profile is generated before Nuitka and bundled as release_mode.json.
+- Runtime no longer depends on the GitHub build environment variable remaining set.
+- Explicit runtime INSIGHTEC_RELEASE_MODE values take precedence for diagnostics.
