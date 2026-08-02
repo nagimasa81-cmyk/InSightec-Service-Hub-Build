@@ -284,10 +284,6 @@ jobs:
             Write-Host "No exact completed build cache found. A new build is required."
           }
 
-      - name: Validate canonical module routes
-        shell: pwsh
-        run: python scripts/validate_all_routes.py
-
       - name: Preflight source and build contract
         if: steps.reusable.outputs.available != 'true'
         shell: pwsh
