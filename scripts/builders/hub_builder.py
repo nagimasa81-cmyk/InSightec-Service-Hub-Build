@@ -81,6 +81,42 @@ class HubBuilder(BaseBuilder):
             if complaint_dir.exists():
                 import shutil
                 shutil.rmtree(complaint_dir)
+        # Rebuild the active Hub card registry from the canonical manifests that
+        # actually exist after repository assembly.  This adds newly included
+        # modules (notably Complaint) and prevents stale cards after exclusion.
+        existing_tools = {
+            str(item.get("id", "")): item
+            for item in config.get("tools", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        integrated_tools = []
+        tools_root = root / "tools"
+        if tools_root.is_dir():
+            for manifest_path in sorted(tools_root.glob("*/manifest.json")):
+                manifest = _read(manifest_path)
+                tool_id = str(manifest.get("id") or "").strip()
+                if not tool_id:
+                    raise ValueError(f"Canonical Hub manifest has no id: {manifest_path}")
+                item = dict(existing_tools.get(tool_id, {}))
+                item.update({
+                    "id": tool_id,
+                    "name": manifest.get("name", item.get("name", tool_id)),
+                    "version": str(manifest.get("version") or item.get("version") or "0"),
+                    "folder": str(manifest_path.parent.relative_to(root)).replace("\\", "/"),
+                    "exe": str(manifest.get("exe") or ""),
+                    "executable_candidates": list(manifest.get("executable_candidates") or []),
+                    "enabled": bool(manifest.get("enabled", True)),
+                    "status": str(manifest.get("status") or "active"),
+                    "description": manifest.get("description", item.get("description", {})),
+                })
+                integrated_tools.append(item)
+        # Keep future plug-ins in config; active tools are sourced only from tools/.
+        plugin_tools = [
+            item for item in config.get("tools", [])
+            if isinstance(item, dict) and str(item.get("folder", "")).replace("\\", "/").startswith("plugins/")
+        ]
+        config["tools"] = integrated_tools + plugin_tools
+
         config["build_selection"] = {
             "hub_variant": variant,
             "guide_enabled": bool(self.ctx.guide),
