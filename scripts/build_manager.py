@@ -28,11 +28,15 @@ def load_registry():
   current=dict(registry.get("modules",{}).get(module_id,{}) or {})
   current.update(data)
   # Canonical names. entry_point is retained only as a compatibility alias.
+  # IMPORTANT: merely having module.json must not convert a SOURCE-contract module
+  # into a registry-only module.  Modules containing insightec_build_contract.json
+  # are resolved from that contract after extraction.  registry_contract is only
+  # enabled when the manifest explicitly opts in (Complaint legacy layout).
   source_entry=str(current.get("source_entry_point") or current.get("source_entry") or current.get("entry_point") or "").strip()
   if source_entry:
    current["source_entry_point"]=source_entry
    current["entry_point"]=source_entry
-  current["registry_contract"]=bool(current.get("registry_contract") or current.get("source_entry_point"))
+  current["registry_contract"]=bool(data.get("registry_contract", current.get("registry_contract", False)))
   registry.setdefault("modules",{})[module_id]=current
  return registry
 def modules(reg):
@@ -40,8 +44,9 @@ def modules(reg):
  return [name for name in configured if (ROOT/"Module"/name).is_dir() and any((ROOT/"Module"/name).glob("*.zip"))]
 def choose_engine(version,cfg,builder):
  raw=str(cfg.get("build_engine") or version.get("build_engine") or "").lower()
- if "nuitka" in raw:return "nuitka"
- if "pyinstaller" in raw:return "pyinstaller"
+ script=str(cfg.get("build_script") or "").lower()
+ if "nuitka" in raw or "nuitka" in script:return "nuitka"
+ if "pyinstaller" in raw or "pyinstaller" in script:return "pyinstaller"
  return "nuitka" if builder in {"do","fft","hub"} else "pyinstaller"
 def canonical_source_entry(mc:dict)->str:
  return str(mc.get("source_entry_point") or mc.get("source_entry") or mc.get("entry_point") or "").strip()
@@ -204,7 +209,20 @@ def _component_context(name,args,reg,workspace_suffix="component"):
 MODULE_CACHE_ROOT=ROOT/".module-cache"/"verified-payloads"
 
 def _module_signature(ctx:Context)->str:
- raw="|".join([ctx.module,sha256(ctx.source_zip),ctx.runtime,ctx.builder_name,ctx.engine,canonical_source_entry(ctx.module_config),canonical_build_script(ctx.module_config),json.dumps(ctx.module_config.get("expected_exe_patterns",[]),sort_keys=True),json.dumps(ctx.module_config.get("required_executables",[]),sort_keys=True),str(ctx.module_config.get("smoke_executable") or ""),"module-cache-v2"])
+ # Cache the effective contract, not only module.json.  SOURCE-contract modules
+ # such as VIMeasure may place their BAT/entry point below a nested contract root.
+ cfg=ctx.build_config
+ effective_entry=str(cfg.get("entry_point") or canonical_source_entry(ctx.module_config) or ctx.entry_point or "")
+ effective_script=str(cfg.get("build_script") or canonical_build_script(ctx.module_config) or "")
+ effective_expected=cfg.get("expected_exe_patterns",[]) or ctx.module_config.get("expected_exe_patterns",[])
+ effective_outputs=cfg.get("output_directories",[]) or ctx.module_config.get("output_directories",[])
+ raw="|".join([
+  ctx.module,sha256(ctx.source_zip),ctx.runtime,ctx.builder_name,ctx.engine,
+  effective_entry,effective_script,json.dumps(effective_expected,sort_keys=True),
+  json.dumps(effective_outputs,sort_keys=True),
+  json.dumps(ctx.module_config.get("required_executables",[]),sort_keys=True),
+  str(ctx.module_config.get("smoke_executable") or ""),"Nuitka==4.1.3","module-cache-v3"
+ ])
  import hashlib
  return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 

@@ -64,6 +64,25 @@ class BaseBuilder:
             "print('QtOpenGLWidgets=' + PySide6.QtOpenGLWidgets.__file__)",
         ], root, log)
 
+
+    def _ensure_deterministic_nuitka(self, root: Path, log: Path, script: str) -> None:
+        """Pin the repository-wide Nuitka toolchain before a Nuitka BAT runs."""
+        uses_nuitka = self.ctx.engine == "nuitka" or "nuitka" in str(script).lower()
+        if not uses_nuitka:
+            return
+        required = "Nuitka==4.1.3"
+        print(f"[TOOLCHAIN] Ensuring {required}")
+        run([
+            sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
+            "--upgrade", required, "ordered-set", "zstandard",
+        ], root, log)
+        run([
+            sys.executable, "-c",
+            "import importlib.metadata as m; "
+            "v=m.version('Nuitka'); print('Nuitka='+v); "
+            "assert v=='4.1.3', 'Expected Nuitka 4.1.3, got '+v",
+        ], root, log)
+
     def build(self)->tuple[Path,Path]:
         c=self.ctx; root=c.source_root; log=c.log_path; started=time.time()
         for req in detect_requirements(root):
@@ -80,6 +99,7 @@ class BaseBuilder:
         if strict:
             p=self._fixed_file(script,"build script")
             ep=self._fixed_file(str(cfg.get("entry_point") or c.entry_point),"entry point")
+            self._ensure_deterministic_nuitka(root, log, script)
             print(f"[FIXED CONTRACT] {cfg.get('build_contract_path','')}")
             print(f"[FIXED ENTRY] {ep.relative_to(root)}")
             print(f"[FIXED BUILD SCRIPT] {p.relative_to(root)}")
@@ -89,6 +109,7 @@ class BaseBuilder:
 
         # Registry-only legacy modules are still fixed: no name search and no fallback.
         p=self._fixed_file(script,"registry build script")
+        self._ensure_deterministic_nuitka(root, log, script)
         registry_entry=str(c.module_config.get("source_entry_point") or c.module_config.get("source_entry") or c.module_config.get("entry_point") or "").strip() if registry_contract else str(c.entry_point)
         if registry_contract and not registry_entry:
             raise RuntimeError(f"Canonical SOURCE entry is not configured for module: {c.module}")
