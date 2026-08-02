@@ -285,7 +285,6 @@ jobs:
             python scripts/dependency_check.py --module "Soni"
           }
 
-
       - name: Build selected target
         id: build
         shell: pwsh
@@ -301,51 +300,6 @@ jobs:
           if ("${{ needs.resolve.outputs.include_sonication }}" -ne "true") { $args += "--exclude-sonication" }
           if ("${{ inputs.build_mode }}" -eq "reuse_existing") { $args += "--reuse-existing" }
           python @args
-
-      - name: Capture build environment
-        if: always() && steps.reusable.outputs.available != 'true'
-        shell: pwsh
-        run: |
-          $outDir = "Build_Diagnostics/Environment"
-          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-
-          python --version 2>&1 | Tee-Object "$outDir/python_version.txt"
-          python -m pip --version 2>&1 | Tee-Object "$outDir/pip_version.txt"
-          python -m pip freeze 2>&1 | Tee-Object "$outDir/pip_freeze.txt"
-
-          $packages = @("PySide6", "shiboken6", "pyqtgraph", "numpy", "nuitka")
-          foreach ($package in $packages) {
-            $fileName = $package.ToLower() + ".txt"
-            python -m pip show $package 2>&1 | Tee-Object (Join-Path $outDir $fileName)
-          }
-
-          @'
-          import importlib.util
-          import platform
-          import sys
-
-          modules = [
-              "PySide6",
-              "PySide6.QtOpenGL",
-              "PySide6.QtOpenGLWidgets",
-              "pyqtgraph",
-              "numpy",
-              "nuitka",
-          ]
-
-          print(f"Python executable: {sys.executable}")
-          print(f"Python version: {sys.version}")
-          print(f"Platform: {platform.platform()}")
-          print()
-          for name in modules:
-              try:
-                  spec = importlib.util.find_spec(name)
-                  print(f"{name}: {'FOUND' if spec else 'MISSING'}")
-                  if spec:
-                      print(f"  origin: {spec.origin}")
-              except Exception as exc:
-                  print(f"{name}: ERROR: {type(exc).__name__}: {exc}")
-          '@ | python - | Tee-Object "$outDir/module_probe.txt"
 
       - name: Save completed Artifact Cache
         if: success() && inputs.build_mode == 'reuse_existing' && steps.reusable.outputs.available != 'true'
@@ -365,14 +319,6 @@ jobs:
             ${{ steps.build.outputs.artifact_path }}/**
           if-no-files-found: error
           compression-level: 0
-
-      - name: Upload environment snapshot
-        if: always() && steps.reusable.outputs.available != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Build_Environment_${{ needs.resolve.outputs.module_name }}_${{ github.run_number }}
-          path: Build_Diagnostics/Environment
-          if-no-files-found: warn
 
       - name: Upload diagnostics
         if: always()
