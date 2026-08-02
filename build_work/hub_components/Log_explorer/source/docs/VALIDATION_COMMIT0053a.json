@@ -1,0 +1,10 @@
+{
+  "version": "Commit0053a",
+  "python_files_compiled": 63,
+  "quick_filter_buttons_rebound": true,
+  "contains_nfkc_casefold": true,
+  "exact_normalized_equality": true,
+  "selection_color": "#D6ECFF",
+  "event_sync_retained": true,
+  "validation": "PASS"
+}

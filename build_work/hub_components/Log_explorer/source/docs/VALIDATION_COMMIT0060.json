@@ -1,0 +1,12 @@
+{
+  "commit": "Commit0060",
+  "version": "2.0.0-rc1-commit0060",
+  "checks": [
+    "python syntax",
+    "version consistency",
+    "quick filter final binding",
+    "header context menu final binding",
+    "build BAT metadata",
+    "ZIP integrity"
+  ]
+}

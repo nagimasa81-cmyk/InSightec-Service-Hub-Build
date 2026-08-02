@@ -1,0 +1,23 @@
+{
+  "version": "Commit0048",
+  "python_files_compiled": 63,
+  "investigation_class_definition": "PASS",
+  "investigation_signature": [
+    "self",
+    "viewer"
+  ],
+  "investigation_import": "PASS",
+  "spectrum_class_definition": "PASS",
+  "spectrum_signature": [
+    "self",
+    "investigation",
+    "standalone"
+  ],
+  "spectrum_import": "PASS",
+  "log_explore_call_sites": "PASS",
+  "embedded_workspace_contract": "PASS",
+  "single_entry_point": true,
+  "type_err_setters_remaining": 0,
+  "qt_runtime_smoke_test": "NOT RUN \u2014 PySide6 unavailable in packaging environment",
+  "validation": "PASS"
+}

@@ -1,0 +1,12 @@
+{
+  "version": "Commit0052a",
+  "python_files_compiled": 63,
+  "quick_filter_all_rows_source": true,
+  "quick_filter_counts_same_source": true,
+  "contains_retained": true,
+  "time_range_same_pipeline": true,
+  "operation_summary_visible": true,
+  "advanced_filter_extension_removed": true,
+  "type_err_setters_remaining": 0,
+  "validation": "PASS"
+}

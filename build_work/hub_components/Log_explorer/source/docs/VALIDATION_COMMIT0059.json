@@ -1,0 +1,15 @@
+{
+  "version": "Commit0059",
+  "application_version": "2.0.0-rc1-commit0059",
+  "artifact": "LogMergeTool_RC1_Commit0059.exe",
+  "base": "Commit0053a",
+  "workflow": "manual-smart-discovery",
+  "checks": [
+    "python-compile",
+    "version-json-consistency",
+    "active-app-version-consistency",
+    "build-script-name-consistency",
+    "runtime-json-inclusion",
+    "zip-integrity"
+  ]
+}

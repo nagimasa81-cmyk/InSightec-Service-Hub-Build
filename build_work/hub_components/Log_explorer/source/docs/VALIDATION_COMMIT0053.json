@@ -1,0 +1,26 @@
+{
+  "version": "Commit0053",
+  "python_files_compiled": 63,
+  "sync_modes": [
+    "Exact",
+    "\u00b11 sec",
+    "\u00b15 sec",
+    "\u00b110 sec",
+    "\u00b130 sec",
+    "Custom"
+  ],
+  "default_sync_range_seconds": 5,
+  "searches_all_visible_panes": true,
+  "multi_row_highlight": true,
+  "best_candidate_scoring": [
+    "timestamp",
+    "message",
+    "call_id",
+    "category",
+    "severity"
+  ],
+  "quick_filter_retained": true,
+  "contains_retained": true,
+  "operation_summary_retained": true,
+  "validation": "PASS"
+}

@@ -1,0 +1,15 @@
+{
+  "version": "Commit0045b",
+  "python_files_compiled": 63,
+  "stale_init_calls": 0,
+  "critical_symbols_present": true,
+  "single_entry_point": true,
+  "start_log_explore_retained": true,
+  "event_viewer_retained": true,
+  "value_viewer_retained": true,
+  "operation_retained": true,
+  "review_canonical_parser_retained": true,
+  "review_horizontal_value_viewer_retained": true,
+  "type_err_setters_remaining": 0,
+  "validation": "PASS"
+}

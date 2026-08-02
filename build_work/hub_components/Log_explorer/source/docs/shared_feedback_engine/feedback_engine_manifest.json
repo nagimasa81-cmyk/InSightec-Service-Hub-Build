@@ -1,0 +1,11 @@
+{
+  "name": "InSightec Shared Feedback Engine",
+  "version": "1.0.0",
+  "schema": "insightec.feedback.v1",
+  "compatible_ui": [
+    "PySide6",
+    "Tkinter",
+    "CLI"
+  ],
+  "created": "2026-07-12"
+}

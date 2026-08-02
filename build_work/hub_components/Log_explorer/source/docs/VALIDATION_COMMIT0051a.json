@@ -1,0 +1,12 @@
+{
+  "version": "Commit0051a",
+  "python_files_compiled": 63,
+  "normalized_column_resolution": true,
+  "contains_filter": true,
+  "exact_filter": true,
+  "dropdown_from_unfiltered_rows": true,
+  "cache_binding_retained": true,
+  "preview_limit": 5000,
+  "type_err_setters_remaining": 0,
+  "validation": "PASS"
+}

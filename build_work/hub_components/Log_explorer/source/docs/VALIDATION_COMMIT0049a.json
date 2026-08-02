@@ -1,0 +1,15 @@
+{
+  "version": "Commit0049a",
+  "python_files_compiled": 63,
+  "open_log_explore_assignments": 1,
+  "logexplore_init_assignments": 1,
+  "logexplore_refresh_assignments": 1,
+  "entry_points": 1,
+  "eager_investigation": false,
+  "eager_spectrum": false,
+  "operation_auto_rebuild": false,
+  "five_tabs_retained": true,
+  "review_parser_retained": true,
+  "type_err_setters_remaining": 0,
+  "validation": "PASS"
+}
