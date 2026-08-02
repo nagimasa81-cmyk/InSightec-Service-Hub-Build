@@ -166,7 +166,7 @@ def _component_context(name,args,reg,workspace_suffix="component"):
  runtime=str(cfg.get("runtime") or ver.get("runtime") or mc.get("runtime") or reg["defaults"]["runtime"])
  builder=str(cfg.get("builder") or mc.get("builder") or reg["defaults"]["builder"])
  engine=choose_engine(ver,cfg,builder)
- entry=str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
+ entry=str(mc.get("source_entry_point") or cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
  log=ws/"diagnostics"/"build.log"
  ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module",True,True)
  if name == "Soni":
@@ -275,7 +275,7 @@ def build_one(name,args,reg):
  ws=ROOT/".build_work"/name; extracted=extract_zip(source,ws/"source")
  ver,cfg=metadata(extracted); runtime=str(cfg.get("runtime") or ver.get("runtime") or mc.get("runtime") or reg["defaults"]["runtime"])
  builder=str(cfg.get("builder") or mc.get("builder") or reg["defaults"]["builder"]); engine=choose_engine(ver,cfg,builder)
- entry=str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
+ entry=str(mc.get("source_entry_point") or cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
  artifact=str(mc.get("artifact_name") or name)
  mode_tag=""
  if name == reg["workflow_selection"]["hub_module"]:
@@ -305,8 +305,25 @@ def build_one(name,args,reg):
    payload,exe=BUILDERS[builder](ctx).build()
   if pipeline:
    pipeline.mark_stage(5,"hub_build","pass",{"exe":str(exe),"payload":str(payload)})
+  # Validate the complete registered payload and select the intended launcher for smoke testing.
+  required_executables=[str(x) for x in mc.get("required_executables",[]) if str(x).strip()]
+  missing_required=[]
+  for required_name in required_executables:
+   matches=[p for p in payload.rglob(required_name) if p.is_file()]
+   if len(matches)!=1:
+    missing_required.append({"name":required_name,"matches":len(matches)})
+  if missing_required:
+   raise FileNotFoundError(f"Registered payload executables are missing or ambiguous: {missing_required}")
+  smoke_name=str(mc.get("smoke_executable") or "").strip()
+  if smoke_name:
+   smoke_matches=[p for p in payload.rglob(smoke_name) if p.is_file()]
+   if len(smoke_matches)!=1:
+    raise FileNotFoundError(f"Registered smoke executable must resolve exactly once: {smoke_name}; found {len(smoke_matches)}")
+   exe=smoke_matches[0]
   qt_deploy=deploy_qt_runtime(payload,exe,extracted,ws/"diagnostics"/"qt_deploy.log")
   payload_check=verify_payload(payload,exe,extracted)
+  payload_check["required_executables"] = required_executables
+  payload_check["smoke_executable"] = exe.name
   with build_stage("hub_smoke" if name == reg["workflow_selection"]["hub_module"] else "module_smoke"):
    smoke=smoke_test_exe(exe,ws/"diagnostics"/"smoke_test.log",seconds=12)
   if pipeline:

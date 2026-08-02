@@ -71,7 +71,11 @@ class BaseBuilder:
         self._ensure_optional_qt_dependencies(root, log)
 
         cfg=c.build_config
-        script=str(cfg.get("build_script") or c.version.get("build_script") or c.module_config.get("build_script") or "")
+        registry_contract=bool(c.module_config.get("registry_contract"))
+        script=str(
+            c.module_config.get("build_script") if registry_contract else
+            (cfg.get("build_script") or c.version.get("build_script") or c.module_config.get("build_script") or "")
+        )
         strict=bool(cfg.get("strict_contract"))
         if strict:
             p=self._fixed_file(script,"build script")
@@ -85,12 +89,15 @@ class BaseBuilder:
 
         # Registry-only legacy modules are still fixed: no name search and no fallback.
         p=self._fixed_file(script,"registry build script")
-        ep=self._fixed_file(str(c.entry_point),"registry entry point")
+        registry_entry=str(c.module_config.get("source_entry_point") or c.entry_point) if registry_contract else str(c.entry_point)
+        ep=self._fixed_file(registry_entry,"registry entry point")
         print(f"[FIXED REGISTRY ENTRY] {ep.relative_to(root)}")
         print(f"[FIXED REGISTRY BUILD SCRIPT] {p.relative_to(root)}")
         cmd=["cmd","/c",str(p)] if p.suffix.lower() in {".bat",".cmd"} else [sys.executable,str(p)]
         run(cmd,p.parent,log,env=self.build_env())
-        return locate_payload(root,cfg.get("expected_exe_patterns",[]),cfg.get("output_directories",[]),started)
+        expected=(c.module_config.get("expected_exe_patterns",[]) if registry_contract else cfg.get("expected_exe_patterns",[]))
+        outputs=(c.module_config.get("output_directories",[]) if registry_contract else cfg.get("output_directories",[]))
+        return locate_payload(root,expected,outputs,started)
 
     def build_env(self):
         e=os.environ.copy()
