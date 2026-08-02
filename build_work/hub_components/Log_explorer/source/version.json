@@ -1,0 +1,10 @@
+{
+  "application": "Log Merge Tool - No Excel",
+  "version": "2.0.0-rc1-commit0073",
+  "commit": "Commit0073",
+  "artifact_base_name": "LogMergeTool_RC1_Commit0073",
+  "build_type": "standalone-onefile",
+  "validation": "syntax-static-csa-default-err-and-load-logs-guarded",
+  "release_mode_supported": true,
+  "guide_tour_enabled_in_release": false
+}
