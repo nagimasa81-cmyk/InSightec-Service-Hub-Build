@@ -1,0 +1,23 @@
+{
+  "ge_orchestra": {
+    "enabled": false,
+    "sdk_root": "C:\\GEHC\\Orchestra",
+    "executable": "C:\\MRIReconstructionAdapters\\GEOrchestraAdapter.exe",
+    "arguments": "--input \"{input}\" --output \"{output}\" --sdk-root \"{sdk_root}\"",
+    "result_file": "reconstruction.npz",
+    "timeout_seconds": 900,
+    "environment": {}
+  },
+  "siemens_ice": {
+    "enabled": false,
+    "sdk_root": "C:\\Siemens\\IDEA",
+    "executable": "C:\\MRIReconstructionAdapters\\SiemensICEAdapter.exe",
+    "arguments": "--input \"{input}\" --output \"{output}\" --sdk-root \"{sdk_root}\"",
+    "result_file": "reconstruction.npz",
+    "timeout_seconds": 900,
+    "environment": {}
+  },
+  "siemens_twix": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "source_application": "TrackerApp (2)",
+  "ge_fft_length": 1024,
+  "default_fov_mm": 500.0,
+  "oppose_ap_coordinate": true,
+  "calibration_coord_margin_mm": 3.0,
+  "gradient_map_optional": true,
+  "tracker_reference_coordinates_mm": {
+    "1": [
+      145.9,
+      67.8,
+      75.4
+    ],
+    "2": [
+      132.6,
+      -92.0,
+      103.1
+    ],
+    "3": [
+      -145.5,
+      -70.1,
+      100.7
+    ],
+    "4": [
+      -132.9,
+      90.1,
+      73.0
+    ]
+  },
+  "notes": [
+    "Plane mapping: 0 axial, 1 coronal, 2 sagittal.",
+    "Rotation and CenterOffset can be supplied from Siemens TWIX info.ini.",
+    "Gradient-map correction remains an optional adapter."
+  ]
+}

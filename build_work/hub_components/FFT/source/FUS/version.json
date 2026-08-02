@@ -1,0 +1,10 @@
+{
+  "version": "0.0.0-alpha-rc8.6",
+  "stage": "RC1",
+  "commit": "0124",
+  "name": "Deterministic Release Guide Suppression",
+  "build": "RC8.6 Commit0124",
+  "release_mode_supported": true,
+  "guide_tour_enabled_in_release": false,
+  "release_sequence": 86
+}

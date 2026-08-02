@@ -1,0 +1,6 @@
+{
+  "application": "MR Image Explorer",
+  "release": "RC1 Prototype Pack1",
+  "single_open_accordion": true,
+  "default_display": "FFT"
+}
