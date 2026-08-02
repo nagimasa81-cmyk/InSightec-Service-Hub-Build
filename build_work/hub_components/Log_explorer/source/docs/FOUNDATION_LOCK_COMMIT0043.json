@@ -1,0 +1,27 @@
+{
+  "version": "Commit0043",
+  "review": {
+    "canonical_parser": "_f43_review_records",
+    "Category": "Parameter name",
+    "Message": "Parameter value",
+    "raw_column_expansion": false
+  },
+  "csa_cga": {
+    "automatic_Type_Err": false,
+    "initial_filter": "ALL"
+  },
+  "viewer": {
+    "default_panes": 2,
+    "allowed_panes": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "merged_visible": false
+  },
+  "workflow": {
+    "start": "Viewer only",
+    "merge": false
+  }
+}
