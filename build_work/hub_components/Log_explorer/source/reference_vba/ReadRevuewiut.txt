@@ -1,0 +1,357 @@
+Option Explicit
+
+Public Sub ImportAndExportScanData_FinalEn_FIXED06()
+    Dim filePath As Variant
+    Dim fileName As String
+    Dim baseName As String
+    Dim savePath As String
+    Dim timestamp As String
+    Dim sourceFolder As String
+
+    Dim fso As Object
+    Dim ts As Object
+    Dim line As String
+    Dim trimmedLine As String
+    Dim SectionName As String
+
+    Dim ScanData As Object
+    Dim ScanList As Collection
+    Dim AllKeys As Object
+
+    Dim wbNew As Workbook
+    Dim wsNew As Worksheet
+    Dim rowIndex As Long
+    Dim colIndex As Long
+    Dim item As Object
+    Dim key As Variant
+
+    On Error GoTo ErrHandler
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+
+    filePath = Application.GetOpenFilename("review out (review.*),review.*", , "Select review.out file")
+    If CStr(filePath) = "False" Then Exit Sub
+
+    fileName = fso.GetFileName(CStr(filePath))
+    sourceFolder = fso.GetParentFolderName(CStr(filePath))
+    timestamp = Format(Now, "yyyy-mm-dd_hhmmss")
+
+    baseName = fileName
+    If InStrRev(baseName, ".") > 0 Then
+        baseName = Left$(baseName, InStrRev(baseName, ".") - 1)
+    End If
+    If LCase$(Right$(baseName, 4)) = ".out" Then
+        baseName = Left$(baseName, Len(baseName) - 4)
+    End If
+
+    savePath = sourceFolder & "\" & baseName & "_" & timestamp & ".xlsx"
+
+    Set ts = fso.OpenTextFile(CStr(filePath), 1, False)
+    Set ScanList = New Collection
+    Set ScanData = CreateObject("Scripting.Dictionary")
+    SectionName = ""
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.StatusBar = "Reading review file..."
+
+    Do While Not ts.AtEndOfStream
+        line = ts.ReadLine
+        line = Replace(line, Chr$(160), " ")
+        line = Replace(line, vbCr, "")
+        trimmedLine = Trim$(line)
+
+        If trimmedLine <> "" Then
+            If IsDateLine(trimmedLine) Then
+                If ScanData.Count > 0 Then
+                    ScanList.Add ScanData
+                    Set ScanData = CreateObject("Scripting.Dictionary")
+                End If
+                SectionName = ""
+                ScanData("date") = GetValueAfterColon(trimmedLine)
+
+            ElseIf IsTimeLine(trimmedLine) Then
+                ScanData("time") = GetValueAfterColon(trimmedLine)
+
+            ElseIf IsIDLine(trimmedLine) Then
+                ScanData("ID") = GetValueAfterColon(trimmedLine)
+
+            ElseIf IsSectionHeader(trimmedLine) Then
+                SectionName = CleanText(trimmedLine)
+
+            ElseIf InStr(1, trimmedLine, ":", vbBinaryCompare) > 0 Then
+                ExtractKeyValues_ByKeyMarkers line, SectionName, ScanData
+            End If
+        End If
+    Loop
+
+    ts.Close
+    Set ts = Nothing
+
+    If ScanData.Count > 0 Then ScanList.Add ScanData
+
+    If ScanList.Count = 0 Then
+        MsgBox "No valid data detected in the file.", vbExclamation
+        GoTo CleanExit
+    End If
+
+    Set wbNew = Workbooks.Add
+    Set wsNew = wbNew.Worksheets(1)
+    wsNew.Name = "ScanSummary"
+
+    Set AllKeys = CreateObject("Scripting.Dictionary")
+
+    AllKeys.Add "date", 1
+    wsNew.Cells(1, 1).Value = "date"
+
+    AllKeys.Add "time", 2
+    wsNew.Cells(1, 2).Value = "time"
+
+    colIndex = 3
+
+    If HasAnyKey(ScanList, "ID") Then
+        AllKeys.Add "ID", colIndex
+        wsNew.Cells(1, colIndex).Value = "ID"
+        colIndex = colIndex + 1
+    End If
+
+    For Each item In ScanList
+        For Each key In item.keys
+            If LCase$(CStr(key)) <> "date" And LCase$(CStr(key)) <> "time" And CStr(key) <> "ID" Then
+                If Not AllKeys.Exists(CStr(key)) Then
+                    AllKeys.Add CStr(key), colIndex
+                    wsNew.Cells(1, colIndex).Value = CStr(key)
+                    colIndex = colIndex + 1
+                End If
+            End If
+        Next key
+    Next item
+
+    Application.StatusBar = "Writing Excel file..."
+
+    rowIndex = 2
+    For Each item In ScanList
+        For Each key In item.keys
+            If AllKeys.Exists(CStr(key)) Then
+                wsNew.Cells(rowIndex, CLng(AllKeys(CStr(key)))).Value = item(key)
+            End If
+        Next key
+        rowIndex = rowIndex + 1
+    Next item
+
+    With wsNew
+        .rows(1).Font.Bold = True
+        .rows(1).AutoFilter
+        .Columns.AutoFit
+        .Activate
+        .Range("C2").Select
+    End With
+    ActiveWindow.FreezePanes = False
+    ActiveWindow.FreezePanes = True
+
+    wbNew.SaveAs fileName:=savePath, FileFormat:=xlOpenXMLWorkbook
+
+CleanExit:
+    Application.StatusBar = False
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    Exit Sub
+
+ErrHandler:
+    On Error Resume Next
+    If Not ts Is Nothing Then ts.Close
+    Application.StatusBar = False
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    MsgBox "Error Number: " & Err.Number & vbCrLf & _
+           "Description: " & Err.Description, vbCritical
+End Sub
+
+Private Sub ExtractKeyValues_ByKeyMarkers(ByVal rawLine As String, ByVal SectionName As String, ByRef ScanData As Object)
+    Dim re As Object
+    Dim matches As Object
+    Dim i As Long
+    Dim valueStart As Long
+    Dim valueEnd As Long
+    Dim nextStart As Long
+    Dim rawKey As String
+    Dim rawValue As String
+    Dim fullKey As String
+
+    On Error GoTo SafeExit
+
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+
+    ' A key starts at the beginning of a line, after one or more tabs, or after two or more spaces.
+    ' The value continues until the next key marker. Values are not split by symbols such as -, +, /, #, (, or ).
+    re.pattern = "(^|[\t]+| {2,})([^:\t]{1,90}?)\s*:"
+
+    Set matches = re.Execute(rawLine)
+    If matches.Count = 0 Then Exit Sub
+
+    For i = 0 To matches.Count - 1
+        rawKey = NormalizeKey(CStr(matches(i).SubMatches(1)))
+        valueStart = CLng(matches(i).FirstIndex) + CLng(matches(i).Length) + 1
+
+        If i < matches.Count - 1 Then
+            nextStart = CLng(matches(i + 1).FirstIndex) + 1
+            valueEnd = nextStart - 1
+        Else
+            valueEnd = Len(rawLine)
+        End If
+
+        If valueStart <= valueEnd Then
+            rawValue = Mid$(rawLine, valueStart, valueEnd - valueStart + 1)
+        Else
+            rawValue = ""
+        End If
+
+        rawValue = CleanValue(rawValue)
+
+        If rawKey <> "" Then
+            If UCase$(rawKey) = "DATE" Or UCase$(rawKey) = "TIME" Or UCase$(rawKey) = "ID" Then
+                ScanData(StandardKey(rawKey)) = rawValue
+            Else
+                If SectionName <> "" Then
+                    fullKey = CleanText(SectionName) & " - " & rawKey
+                Else
+                    fullKey = rawKey
+                End If
+                ScanData(fullKey) = rawValue
+            End If
+        End If
+    Next i
+
+SafeExit:
+End Sub
+
+Private Function HasAnyKey(ByVal ScanList As Collection, ByVal targetKey As String) As Boolean
+    Dim item As Object
+    For Each item In ScanList
+        If item.Exists(targetKey) Then
+            HasAnyKey = True
+            Exit Function
+        End If
+    Next item
+    HasAnyKey = False
+End Function
+
+Private Function IsDateLine(ByVal s As String) As Boolean
+    IsDateLine = (LCase$(Left$(Trim$(s), 5)) = "date:")
+End Function
+
+Private Function IsTimeLine(ByVal s As String) As Boolean
+    IsTimeLine = (LCase$(Left$(Trim$(s), 5)) = "time:")
+End Function
+
+Private Function IsIDLine(ByVal s As String) As Boolean
+    Dim t As String
+    t = LCase$(Trim$(s))
+    IsIDLine = (Left$(t, 2) = "id" And InStr(1, t, ":", vbBinaryCompare) > 0)
+End Function
+
+Private Function IsSectionHeader(ByVal s As String) As Boolean
+    Dim t As String
+    Dim u As String
+
+    t = Trim$(s)
+    u = UCase$(t)
+
+    If Len(t) = 0 Then
+        IsSectionHeader = False
+    ElseIf InStr(1, t, ":", vbBinaryCompare) > 0 Then
+        IsSectionHeader = False
+    ElseIf Left$(t, 5) = "-----" Then
+        IsSectionHeader = False
+    ElseIf Right$(u, 6) = "SCREEN" Then
+        IsSectionHeader = True
+    ElseIf InStr(1, u, " SCREEN", vbBinaryCompare) > 0 Then
+        IsSectionHeader = True
+    ElseIf u = "GENERAL INFORMATION" Then
+        IsSectionHeader = True
+    ElseIf u = "USER/SYSTEM PREFERENCE STATE" Then
+        IsSectionHeader = True
+    ElseIf u = "ACCELERATION" Then
+        IsSectionHeader = True
+    ElseIf u = "USER CV" Or u = "USER CV SCREEN" Then
+        IsSectionHeader = True
+    Else
+        IsSectionHeader = False
+    End If
+End Function
+
+Private Function GetValueAfterColon(ByVal s As String) As String
+    Dim p As Long
+    p = InStr(1, s, ":", vbBinaryCompare)
+    If p > 0 Then
+        GetValueAfterColon = CleanValue(Mid$(s, p + 1))
+    Else
+        GetValueAfterColon = ""
+    End If
+End Function
+
+Private Function StandardKey(ByVal s As String) As String
+    Select Case UCase$(Trim$(s))
+        Case "DATE"
+            StandardKey = "date"
+        Case "TIME"
+            StandardKey = "time"
+        Case "ID"
+            StandardKey = "ID"
+        Case Else
+            StandardKey = Trim$(s)
+    End Select
+End Function
+
+Private Function NormalizeKey(ByVal s As String) As String
+    Dim t As String
+    t = CleanText(s)
+
+    If LCase$(Right$(t, 3)) = " is" Then
+        t = Left$(t, Len(t) - 3)
+        t = CleanText(t)
+    End If
+
+    NormalizeKey = t
+End Function
+
+Private Function CleanValue(ByVal s As String) As String
+    Dim t As String
+    t = Replace(s, Chr$(160), " ")
+    t = Replace(t, vbTab, " ")
+    t = CleanControlCharacters(t)
+    CleanValue = Trim$(t)
+End Function
+
+Private Function CleanText(ByVal s As String) As String
+    Dim t As String
+    t = Replace(s, Chr$(160), " ")
+    t = Replace(t, vbTab, " ")
+    t = CleanControlCharacters(t)
+    Do While InStr(1, t, "  ", vbBinaryCompare) > 0
+        t = Replace(t, "  ", " ")
+    Loop
+    CleanText = Trim$(t)
+End Function
+
+Private Function CleanControlCharacters(ByVal s As String) As String
+    Dim i As Long
+    Dim c As String
+    Dim result As String
+
+    result = ""
+    For i = 1 To Len(s)
+        c = Mid$(s, i, 1)
+        If AscW(c) >= 32 Then
+            result = result & c
+        End If
+    Next i
+
+    CleanControlCharacters = result
+End Function
+
+
+
+

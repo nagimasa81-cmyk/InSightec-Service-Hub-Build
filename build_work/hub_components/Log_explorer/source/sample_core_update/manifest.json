@@ -1,0 +1,9 @@
+{
+  "package_type": "core_update",
+  "app_id": "log_merge_tool_noexcel",
+  "version": "2.37.1-sample",
+  "min_supported_version": "2.37.0",
+  "release_date": "2026-07-08",
+  "backup_required": true,
+  "description": "Sample Core Update package. Replace dummy files with actual updated EXE/files when distributing a real core update."
+}
