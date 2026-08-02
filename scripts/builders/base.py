@@ -89,9 +89,12 @@ class BaseBuilder:
 
         # Registry-only legacy modules are still fixed: no name search and no fallback.
         p=self._fixed_file(script,"registry build script")
-        registry_entry=str(c.module_config.get("source_entry_point") or c.entry_point) if registry_contract else str(c.entry_point)
-        ep=self._fixed_file(registry_entry,"registry entry point")
-        print(f"[FIXED REGISTRY ENTRY] {ep.relative_to(root)}")
+        registry_entry=str(c.module_config.get("source_entry_point") or c.module_config.get("source_entry") or c.module_config.get("entry_point") or "").strip() if registry_contract else str(c.entry_point)
+        if registry_contract and not registry_entry:
+            raise RuntimeError(f"Canonical SOURCE entry is not configured for module: {c.module}")
+        ep=self._fixed_file(registry_entry,"registry SOURCE entry")
+        print(f"[CANONICAL SOURCE ENTRY] {ep.relative_to(root)}")
+        print(f"[CANONICAL OUTPUT EXE] {c.module_config.get('smoke_executable') or c.module_config.get('main_executable') or c.module_config.get('expected_exe_patterns',[])}")
         print(f"[FIXED REGISTRY BUILD SCRIPT] {p.relative_to(root)}")
         cmd=["cmd","/c",str(p)] if p.suffix.lower() in {".bat",".cmd"} else [sys.executable,str(p)]
         run(cmd,p.parent,log,env=self.build_env())

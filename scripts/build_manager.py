@@ -12,7 +12,29 @@ class Context:
  module:str; module_dir:Path; source_zip:Path; source_root:Path; workspace:Path; output_root:Path; log_path:Path
  registry:dict; module_config:dict; runtime:str; builder_name:str; engine:str; entry_point:str; exe_stem:str
  version:dict; build_config:dict; guide:bool=False; hub_variant:str="card_launcher"; include_sonication:bool=True; include_complaint:bool=True; build_stage:str=""
-def load_registry(): return json.loads((ROOT/"config/module_registry.json").read_text(encoding="utf-8"))
+def load_registry():
+ registry=json.loads((ROOT/"config/module_registry.json").read_text(encoding="utf-8"))
+ # module.json is the canonical per-module contract. Merge it over the central
+ # registry so every route (standalone, Hub assembly, reuse and audit) resolves
+ # the same SOURCE entry, build script and output executables.
+ for module_dir in sorted((ROOT/"Module").iterdir()):
+  manifest=module_dir/"module.json"
+  if not manifest.is_file():
+   continue
+  data=json.loads(manifest.read_text(encoding="utf-8-sig"))
+  module_id=str(data.get("id") or module_dir.name)
+  if module_id != module_dir.name:
+   raise ValueError(f"module.json id mismatch: {module_dir.name} != {module_id}")
+  current=dict(registry.get("modules",{}).get(module_id,{}) or {})
+  current.update(data)
+  # Canonical names. entry_point is retained only as a compatibility alias.
+  source_entry=str(current.get("source_entry_point") or current.get("source_entry") or current.get("entry_point") or "").strip()
+  if source_entry:
+   current["source_entry_point"]=source_entry
+   current["entry_point"]=source_entry
+  current["registry_contract"]=bool(current.get("registry_contract") or current.get("source_entry_point"))
+  registry.setdefault("modules",{})[module_id]=current
+ return registry
 def modules(reg):
  configured=[reg["workflow_selection"]["hub_module"], *reg["workflow_selection"]["standalone_modules"]]
  return [name for name in configured if (ROOT/"Module"/name).is_dir() and any((ROOT/"Module"/name).glob("*.zip"))]
@@ -21,6 +43,12 @@ def choose_engine(version,cfg,builder):
  if "nuitka" in raw:return "nuitka"
  if "pyinstaller" in raw:return "pyinstaller"
  return "nuitka" if builder in {"do","fft","hub"} else "pyinstaller"
+def canonical_source_entry(mc:dict)->str:
+ return str(mc.get("source_entry_point") or mc.get("source_entry") or mc.get("entry_point") or "").strip()
+
+def canonical_build_script(mc:dict)->str:
+ return str(mc.get("build_script") or "").strip()
+
 def version_value(v, source_name=""):
  version=str(v.get("version") or v.get("app_version") or "").strip()
  commit=str(v.get("commit") or "").strip()
@@ -166,7 +194,7 @@ def _component_context(name,args,reg,workspace_suffix="component"):
  runtime=str(cfg.get("runtime") or ver.get("runtime") or mc.get("runtime") or reg["defaults"]["runtime"])
  builder=str(cfg.get("builder") or mc.get("builder") or reg["defaults"]["builder"])
  engine=choose_engine(ver,cfg,builder)
- entry=str(mc.get("source_entry_point") or cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
+ entry=canonical_source_entry(mc) or str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or "")
  log=ws/"diagnostics"/"build.log"
  ctx=Context(name,module_dir,source,extracted,ws,ROOT/"artifacts",log,reg,mc,runtime,builder,engine,entry,str(mc.get("artifact_name") or name),ver,cfg,args.guide,"standalone_module",True,True)
  if name == "Soni":
@@ -176,7 +204,7 @@ def _component_context(name,args,reg,workspace_suffix="component"):
 MODULE_CACHE_ROOT=ROOT/".module-cache"/"verified-payloads"
 
 def _module_signature(ctx:Context)->str:
- raw="|".join([ctx.module,sha256(ctx.source_zip),ctx.runtime,ctx.builder_name,ctx.engine,str(ctx.module_config.get("build_script") or ""),"module-cache-v1"])
+ raw="|".join([ctx.module,sha256(ctx.source_zip),ctx.runtime,ctx.builder_name,ctx.engine,canonical_source_entry(ctx.module_config),canonical_build_script(ctx.module_config),json.dumps(ctx.module_config.get("expected_exe_patterns",[]),sort_keys=True),json.dumps(ctx.module_config.get("required_executables",[]),sort_keys=True),str(ctx.module_config.get("smoke_executable") or ""),"module-cache-v2"])
  import hashlib
  return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
@@ -275,7 +303,7 @@ def build_one(name,args,reg):
  ws=ROOT/".build_work"/name; extracted=extract_zip(source,ws/"source")
  ver,cfg=metadata(extracted); runtime=str(cfg.get("runtime") or ver.get("runtime") or mc.get("runtime") or reg["defaults"]["runtime"])
  builder=str(cfg.get("builder") or mc.get("builder") or reg["defaults"]["builder"]); engine=choose_engine(ver,cfg,builder)
- entry=str(mc.get("source_entry_point") or cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or mc.get("entry_point") or "")
+ entry=canonical_source_entry(mc) or str(cfg.get("entrypoint") or cfg.get("entry_point") or ver.get("entry_point") or "")
  artifact=str(mc.get("artifact_name") or name)
  mode_tag=""
  if name == reg["workflow_selection"]["hub_module"]:
@@ -372,7 +400,7 @@ def main():
  selected=available if a.all else [a.module]
  if not selected or not selected[0]: raise SystemExit("--module is required (or use --all)")
  summary=[]; failed=[]
- if a.reuse_existing and not a.all:
+ if a.reuse_existing and not a.all and a.module != reg["workflow_selection"]["hub_module"]:
   cached=restore_cached_build(a.cache_signature)
   if cached:
    summary.append(cached)
