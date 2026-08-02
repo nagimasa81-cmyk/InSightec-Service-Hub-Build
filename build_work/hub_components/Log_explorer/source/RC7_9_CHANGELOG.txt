@@ -1,0 +1,4 @@
+RC7.9
+- Hub handoff now opens Log Viewer and immediately loads detected log types into visible panes.
+- LOAD LOGS is still retained for normal manual workflow.
+- Handoff status distinguishes received files from completed Viewer import.

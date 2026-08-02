@@ -1,0 +1,4 @@
+RC6.2 release build fix
+- Version consistency test now compares APP_VERSION with version.json dynamically.
+- Removed fixed Commit0067 assertion.
+- Build metadata updated to Commit0069.

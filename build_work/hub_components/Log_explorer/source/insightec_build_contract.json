@@ -1,0 +1,48 @@
+{
+  "module_id": "LogExplorer",
+  "module_folder": "Log_explorer",
+  "release_sequence": 82,
+  "source_version": "2.0.0-rc8.8-commit0072",
+  "root_marker": "LogMergeTool_NoExcel_Main.py",
+  "external_tool_assembly": false,
+  "guide_runtime": false,
+  "contract_schema": "insightec-build-contract/v1",
+  "contract_version": 13,
+  "release_mode": {
+    "environment_variable": "INSIGHTEC_RELEASE_MODE",
+    "value": "1",
+    "guide_tour_enabled": false
+  },
+  "build": {
+    "mode": "bat",
+    "file": "01_BUILD_EXE_NUITKA.bat",
+    "forbidden_tokens": [
+      "01_BUILD_EXE_GITHUB.bat"
+    ],
+    "expected_exe_patterns": [
+      "LogMergeTool_RC1_Commit0072.exe",
+      "*LogMerge*.exe",
+      "*Log*Explorer*.exe"
+    ],
+    "output_directories": [
+      "dist",
+      "output",
+      "release"
+    ]
+  },
+  "ci_safe_build": true,
+  "preflight_profile": "strong-v2-handoff",
+  "handoff": {
+    "schema": "insightec.auto-analysis.handoff.v1",
+    "argv": "--handoff <json>",
+    "environment": "INSIGHTEC_HANDOFF",
+    "native_receiver": true,
+    "auto_load": true
+  },
+  "viewer_defaults": {
+    "visible_panes": 2,
+    "pane_1_source": "WS",
+    "pane_2_source": "CSA",
+    "explicit_load_required": false
+  }
+}

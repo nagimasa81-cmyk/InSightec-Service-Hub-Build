@@ -1,0 +1,9 @@
+Log Explorer Commit0070 / RC8.2
+
+- Added Quick Filter: WS Err + code + True.
+- WS and WaterSystem panes apply this filter automatically after loading.
+- Condition: Level equals Err/Error AND Message contains code AND True (case-insensitive).
+- Added row bookmark toggle from the row right-click menu.
+- Added Next Bookmark and Previous Bookmark navigation.
+- Bookmarked rows are highlighted in pale yellow and bold.
+- Bookmarks remain available during the current Viewer session and across pane filtering.
