@@ -5,8 +5,8 @@
   "artifact_name": "Complaint",
   "builder": "rc8",
   "runtime": "R6",
-  "entry_point": "main.py",
-  "build_script": "01_BUILD_EXE_NUITKA_CI.bat",
+  "entry_point": "launcher.py",
+  "build_script": "01_BUILD_EXE_NUITKA.bat",
   "supports_reuse": true,
   "supports_hub": true,
   "hub_tool_folder": "ComplaintServiceHub"

@@ -33,7 +33,9 @@ def read_text(p:Path)->str:
 
 def bat_local_refs(text:str)->set[str]:
     refs=set()
-    for m in re.finditer(r'(?i)(?:^|[\s"=])(?!https?://)([^\s"<>|]+\.(?:py|json|txt|ico|png|jpg|jpeg|yaml|yml|toml|spec|ini))(?=$|[\s"<>|])', text):
+    # Output redirection targets are generated files, not source dependencies.
+    scan_text=re.sub(r'(?im)(?:^|\s)(?:1?>|2>|>>)[ \t]*"?[^\s"&|<>]+', ' ', text)
+    for m in re.finditer(r'(?i)(?:^|[\s"=])(?!https?://)([^\s"<>|]+\.(?:py|json|txt|ico|png|jpg|jpeg|yaml|yml|toml|spec|ini))(?=$|[\s"<>|])', scan_text):
         s=m.group(1).strip('"').replace('\\','/')
         if '=' in s or '%' in s or '*' in s or s.startswith('-'): continue
         refs.add(s)
@@ -55,6 +57,61 @@ def hub_legacy_contract(root:Path):
     if len(py)==1 and len(bats)==1 and len(entries)==1:
         return bats[0], entries[0], 'Service Hub explicit Build_Hub_EXE.py rule (contract file not required)'
     return None
+
+
+def complaint_legacy_contract(root:Path):
+    """Explicit Complaint Service Hub rule for legacy sources without contract JSON."""
+    bats=[p for p in root.rglob('01_BUILD_EXE_NUITKA.bat') if not any(x in SKIP for x in p.parts)]
+    launchers=[p for p in root.rglob('launcher.py') if not any(x in SKIP for x in p.parts)]
+    hubs=[p for p in root.rglob('hub_app.py') if not any(x in SKIP for x in p.parts)]
+    updaters=[p for p in root.rglob('updater.py') if not any(x in SKIP for x in p.parts)]
+    if len(bats)==1 and len(launchers)==1 and len(hubs)==1 and len(updaters)==1:
+        build={
+            'expected_exe_patterns':[
+                'Complaint_Service_Hub_Launcher.exe',
+                'Complaint_Service_Hub.exe',
+                'Complaint_Service_Hub_Updater.exe',
+            ],
+            'output_directories':['dist/Complaint_Service_Hub'],
+            'forbidden_tokens':[],
+        }
+        return bats[0], launchers[0], build, 'Complaint explicit legacy Nuitka rule (contract file not required)'
+    return None
+
+
+
+def water_legacy_contract(root:Path):
+    """Explicit Water System Analyzer rule for legacy sources without contract JSON."""
+    bats=[p for p in root.rglob('build_exe.bat') if not any(x in SKIP for x in p.parts)]
+    entries=[p for p in root.rglob('WaterSystemAnalyzer_Ver42_StableIntegrated.py') if not any(x in SKIP for x in p.parts)]
+    requirements=[p for p in root.rglob('requirements_py313_pyside6_nuitka.txt') if not any(x in SKIP for x in p.parts)]
+    if len(bats)==1 and len(entries)==1 and len(requirements)==1:
+        build={
+            'expected_exe_patterns':['WaterSystemAnalyzer_Ver42.exe'],
+            'output_directories':['dist/WaterSystemAnalyzer_Ver42'],
+            'forbidden_tokens':[],
+        }
+        return bats[0], entries[0], build, 'Water System Analyzer explicit legacy Nuitka rule (contract file not required)'
+    return None
+
+def discover_manifest_modules(*, supports_hub:bool|None=None)->list[str]:
+    """Discover registered modules from Module/*/module.json without a fixed count."""
+    found=[]
+    module_root=ROOT/'Module'
+    if not module_root.is_dir():
+        return found
+    for manifest in sorted(module_root.glob('*/module.json'), key=lambda x:x.parent.name.lower()):
+        try:
+            data=json.loads(manifest.read_text(encoding='utf-8-sig'))
+        except Exception:
+            continue
+        module_id=str(data.get('id') or manifest.parent.name).strip()
+        if not module_id or module_id not in REG.get('modules',{}):
+            continue
+        if supports_hub is not None and bool(data.get('supports_hub',False)) is not supports_hub:
+            continue
+        found.append(module_id)
+    return found
 
 def audit(module:str)->Result:
     cfg=REG['modules'][module]; runtime=cfg.get('runtime',REG['defaults']['runtime']); py=REG['runtimes'][runtime]['python']; d=[]
@@ -84,6 +141,16 @@ def audit(module:str)->Result:
             if not legacy:
                 return Result(module,'FAIL',z.name,runtime=runtime,python=py,details=['Service Hub contract missing and explicit Build_Hub_EXE.py layout is incomplete'])
             bat,ep,note=legacy; build={'expected_exe_patterns':['*.exe'],'output_directories':['dist','release','build']}; contract_label='SERVICE_HUB_EXPLICIT_RULE'; d.append(note)
+        elif len(contracts)==0 and module=='Complaint_service_hub':
+            legacy=complaint_legacy_contract(root)
+            if not legacy:
+                return Result(module,'FAIL',z.name,runtime=runtime,python=py,details=['Complaint contract missing and explicit legacy Nuitka layout is incomplete'])
+            bat,ep,build,note=legacy; contract_label='COMPLAINT_EXPLICIT_RULE'; d.append(note)
+        elif len(contracts)==0 and module=='Water_system_analyzer':
+            legacy=water_legacy_contract(root)
+            if not legacy:
+                return Result(module,'FAIL',z.name,runtime=runtime,python=py,details=['Water System Analyzer contract missing and explicit legacy Nuitka layout is incomplete'])
+            bat,ep,build,note=legacy; contract_label='WATER_EXPLICIT_RULE'; d.append(note)
         else:
             return Result(module,'FAIL',z.name,runtime=runtime,python=py,details=[f'Expected exactly one contract, found {len(contracts)}'])
 
@@ -114,16 +181,23 @@ def audit(module:str)->Result:
                     d.append(f'Contract entry point is not referenced by BAT or its launcher: {ep.name}')
         if not build.get('expected_exe_patterns'):d.append('expected_exe_patterns is empty')
         if not build.get('output_directories'):d.append('output_directories is empty')
-        hard=[x for x in d if not x.startswith('Service Hub explicit')]
+        hard=[x for x in d if not (x.startswith('Service Hub explicit') or x.startswith('Complaint explicit legacy') or x.startswith('Water System Analyzer explicit legacy'))]
         return Result(module,'PASS' if not hard else 'FAIL',z.name,contract_label,str(bat.relative_to(root)),str(ep.relative_to(root)),runtime,py,d)
 
 def selected_modules(target:str, selected:str, exclude_sonication:bool=False, exclude_complaint:bool=False)->list[str]:
     scope=REG.get('workflow_selection',{})
     if target=='module': return [selected]
+    hub_module=scope['hub_module']
     if target=='service_hub':
-        items=[scope['hub_module'], *scope.get('service_hub_modules',[])]
+        discovered=discover_manifest_modules(supports_hub=True)
+        # Compatibility fallback for older repositories that do not yet carry manifests.
+        items=discovered or list(scope.get('service_hub_modules',[]))
+        items=[hub_module, *items]
         return [m for m in items if not (exclude_sonication and m=='Soni') and not (exclude_complaint and m=='Complaint_service_hub')]
-    if target=='all': return [scope['hub_module'], *scope.get('standalone_modules',[])]
+    if target=='all':
+        discovered=discover_manifest_modules(supports_hub=None)
+        items=[m for m in discovered if m != hub_module] or list(scope.get('standalone_modules',[]))
+        return [hub_module, *items]
     raise ValueError(f'Unknown target: {target}')
 
 def main():

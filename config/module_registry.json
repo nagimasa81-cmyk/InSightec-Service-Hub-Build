@@ -115,13 +115,24 @@
       "display_name": "Complaint Service Hub",
       "builder": "rc8",
       "runtime": "R6",
-      "entry_point": "main.py",
+      "entry_point": "launcher.py",
       "icon": "app.ico",
       "artifact_name": "Complaint",
-      "build_script": "01_BUILD_EXE_NUITKA_CI.bat",
+      "build_script": "01_BUILD_EXE_NUITKA.bat",
       "supports_reuse": true,
       "supports_hub": true,
       "hub_tool_folder": "ComplaintServiceHub"
+    },
+    "Water_system_analyzer": {
+      "display_name": "Water System Analyzer",
+      "builder": "do",
+      "runtime": "R5",
+      "entry_point": "WaterSystemAnalyzer_Ver42_StableIntegrated.py",
+      "icon": "app.ico",
+      "artifact_name": "Water",
+      "build_script": "build_exe.bat",
+      "supports_reuse": true,
+      "supports_hub": false
     }
   },
   "workflow_selection": {
@@ -138,6 +149,7 @@
     "standalone_modules": [
       "Complaint_service_hub",
       "DO_Analysis",
+      "Water_system_analyzer",
       "Log_explorer",
       "FFT",
       "trackerSNR",
@@ -160,7 +172,8 @@
       "trackerSNR": "Tracker SNR",
       "VIMeasure": "VIMeasure",
       "Soni": "Sonication Analysis",
-      "Complaint_service_hub": "Complaint Service Hub"
+      "Complaint_service_hub": "Complaint Service Hub",
+      "Water_system_analyzer": "Water System Analyzer"
     },
     "sonication_selection": {
       "include": true,

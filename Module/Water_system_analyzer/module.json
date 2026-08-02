@@ -1,0 +1,13 @@
+{
+  "schema": "insightec.module.v1",
+  "id": "Water_system_analyzer",
+  "display_name": "Water System Analyzer",
+  "artifact_name": "Water",
+  "builder": "do",
+  "runtime": "R5",
+  "entry_point": "WaterSystemAnalyzer_Ver42_StableIntegrated.py",
+  "build_script": "build_exe.bat",
+  "supports_reuse": true,
+  "supports_hub": false,
+  "hub_tool_folder": ""
+}
