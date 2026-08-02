@@ -1,0 +1,9 @@
+Commit0111 — Quick Adjust Single-Trial Detection
+
+1. Renamed the Quick Adjust action button to "Apply Quick Adjust".
+2. Existing-mask path remains a single reconstruction from Current Mask + current Quick Adjust parameters.
+3. Empty-mask path now runs exactly one Auto Correct detection trial using the current Quick Adjust parameters.
+4. The empty-mask path does not call auto_correct_with_retry and does not run six preset trials.
+5. A successful single detection installs the detected mask and reconstructed result for Review/Paint/Expert continuation.
+6. A failed single detection leaves Quick Adjust usable and suggests changing parameters or using Paint/Expert.
+7. Updated version metadata, BUILD_INFO, README, and focused tests.

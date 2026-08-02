@@ -1,0 +1,17 @@
+MR Image Explorer Commit0088 Check Report
+
+Implemented:
+- Compensation preview automatically opens a GUI comparison dialog.
+- Before and After reconstructed images are shown side by side.
+- Difference Image, Difference FFT, and Difference Phase are visible in dedicated GUI panels.
+- Zoom and pan are synchronized across all five panels.
+- Crosshair/cursor position is synchronized across all five panels.
+- Before and After use a common WW/WL scale; right-drag WW/WL can remain synchronized.
+- A persistent Open Difference / Before-After button reopens the latest preview.
+
+Validation:
+- app.py py_compile: PASS
+- Hybrid/background/manual compensation regression: 10 PASS
+- Static GUI wiring checks: PASS
+- ZIP integrity: pending at report creation, verified during packaging
+- Native Windows/PySide6 GUI execution: not run in this Linux environment

@@ -1,0 +1,18 @@
+Commit0094 Triple Check
+
+1. Syntax
+- app.py: PASS
+- core/hybrid_compensation.py: PASS
+
+2. Focused regression
+- 18 tests passed
+- Moderate rectangular Block detection: PASS
+- Short vertical false-line rejection: PASS
+- Long coherent vertical line detection: PASS
+- Editable mask Preview/Reconstruct path: PASS
+
+3. Packaging
+- ZIP integrity verified
+
+Environment limitation
+- PySide6 GUI runtime was not available in the Linux validation environment.

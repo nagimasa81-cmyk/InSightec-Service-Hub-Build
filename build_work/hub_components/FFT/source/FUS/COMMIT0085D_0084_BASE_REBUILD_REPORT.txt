@@ -1,0 +1,18 @@
+Commit0085d BASE REBUILD REPORT
+
+Base copied directly from Commit0084.
+Commit0084 build BAT/YML, launcher, decoder manager, DICOM provider, requirements, cache foundation and startup path were preserved unchanged.
+
+Transplanted only:
+- app.py feature changes for manual RAW mask painting
+- core/roi_raw_compensation.py
+- core/raw_compensation.py (compatibility/regression support)
+- Image Workspace current image/FFT context transfer when Spike Diag tab is activated
+- focused Commit0085 feature tests
+
+Not transplanted:
+- Commit0085c/Fix1-Fix4 build configuration changes
+- GDCM forced includes/excludes
+- decoder/startup modifications
+
+Windows EXE runtime requires user validation.

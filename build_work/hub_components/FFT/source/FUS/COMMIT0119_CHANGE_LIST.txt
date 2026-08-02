@@ -1,0 +1,11 @@
+Commit0119 — Four-Phase Guide System
+
+1. Replaced startup Raw Data Compensation guide with a normal usage guide.
+2. Added optional advanced Raw Data Compensation offer only after normal guide completion.
+3. Added persistent Help menu and Guide Library.
+4. Added separate normal/advanced guide progress settings.
+5. Replaced single exit checkbox with two unchecked options:
+   - Show normal usage guide at next startup
+   - Offer Raw Data Compensation guide after normal guide
+6. Preserved No — Do Not Ask Again behavior.
+7. Preserved existing compensation tooltips and application functionality.

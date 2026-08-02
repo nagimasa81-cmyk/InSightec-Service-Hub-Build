@@ -1,0 +1,15 @@
+Commit0089 Guided Poisson Solver Check Report
+
+Implementation
+- True guided discrete Poisson equation: PASS
+- Fixed Dirichlet boundary outside mask: PASS
+- Complex k-space support: PASS
+- Red-Black SOR convergence metadata: PASS
+- High 3-pass / Extreme 5-pass integration: PASS
+- Hermitian symmetry pipeline retained: PASS
+- Commit0088 Difference Viewer code retained: PASS
+
+Validation
+- Python compile: PASS
+- Poisson and RAW compensation regression: 12 PASS
+- GUI runtime test: not executed in Linux environment because PySide6 is unavailable

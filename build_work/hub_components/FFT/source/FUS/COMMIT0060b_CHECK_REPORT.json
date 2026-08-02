@@ -1,0 +1,16 @@
+{
+  "commit": "Commit0060b_Orientation_Triple_Check_Hotfix",
+  "base": "Commit0060a_Orientation_Button_AP_Series_Navigation_Hotfix",
+  "checks": {
+    "python_compile": "passed",
+    "targeted_regression_tests": "9 passed",
+    "orientation_method_duplicates": 0,
+    "ge_jis_axial": "Top=A Bottom=P Left=L Right=R",
+    "orientation_dialog_guard": "passed",
+    "series_navigation_lock": "passed"
+  },
+  "notes": [
+    "Legacy commit tests that assert historical version strings were not used as release gates.",
+    "Image loading, FFT, Window/Level, Zoom and Pan paths were not intentionally modified."
+  ]
+}

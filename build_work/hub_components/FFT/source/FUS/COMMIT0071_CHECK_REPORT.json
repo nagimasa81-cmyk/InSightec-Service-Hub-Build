@@ -1,0 +1,18 @@
+{
+  "commit": "Commit0071",
+  "python_compile": "passed",
+  "static_regression_tests": {
+    "passed": 6,
+    "failed": 0
+  },
+  "implemented": [
+    "Point, row/column line, band, and oblique k-space candidate extraction",
+    "Candidate-only inverse FFT validation against original-image residual",
+    "Predicted real-space wave angle and spatial period calculation",
+    "No row/column intersection requirement for line and band detection",
+    "Candidate-shape overlay instead of red circles on every DC-cross sample",
+    "Smaller corner-aligned paired-chevron frequency-direction marker",
+    "Removed delayed second Fit that caused a one-frame left shift"
+  ],
+  "runtime_note": "Full PySide6 GUI execution was not available in the packaging container; Windows EXE validation remains required after GitHub Actions build."
+}

@@ -1,0 +1,17 @@
+{
+  "commit": "Commit0073",
+  "title": "Frame Lock + Spike Detection Review Deck",
+  "summary": [
+    "Frame-lock active during Image Workspace image selection",
+    "Removed delayed _stabilize_layout from show_dicom",
+    "Removed executable autoRange usage from viewer fit paths",
+    "Added deterministic ImagePanel.fit_to_image()",
+    "Added docs/Spike_Detection_Review_Deck.md",
+    "Added Spike_Detection_Review_Deck_Commit0073.pptx"
+  ],
+  "tests": {
+    "test_commit0073_frame_lock_review_deck.py": "5 passed",
+    "python_compile": "passed",
+    "zip_integrity": "pending before packaging"
+  }
+}

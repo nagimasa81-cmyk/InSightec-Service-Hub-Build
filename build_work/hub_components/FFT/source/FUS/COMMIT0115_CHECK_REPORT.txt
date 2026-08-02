@@ -1,0 +1,24 @@
+Commit0115 Triple Check Report
+
+Scope
+- Paired edge-Blob Auto Correct acceptance
+- Centre-axis bridge suppression
+- High/Extreme compensation retuning
+- Crosshair visibility safety across all ImagePanel instances
+- Candidate Viewer geometry diagnostics
+
+Check 1: Syntax and source integrity
+- Python AST: 114 files checked, 0 errors
+- py_compile: app.py, core/auto_correct.py and Commit0115 test passed
+- compileall: passed
+
+Check 2: Focused functional tests
+- Commit0115 + Commit0114 edge-Blob tests: 6 passed
+- Verified paired edge geometry, centre-axis occupancy guard, default-hidden crosshairs, and safer High/Extreme profiles.
+
+Check 3: Selected regression tests
+- 16 functional checks passed.
+- 3 historical tests failed only because they require old fixed Commit0110/0111/0112 version strings. They do not indicate a functional regression.
+
+Important validation note
+- The supplied 113-6.zip contains one DICOM image. The detector operates on the application's derived k-space/RAW state. Final sensitivity should therefore be confirmed in the built EXE with the supplied dataset and the same slice.

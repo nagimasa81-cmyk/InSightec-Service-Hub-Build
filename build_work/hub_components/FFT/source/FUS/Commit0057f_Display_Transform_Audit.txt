@@ -1,0 +1,11 @@
+2522: getattr(self, "display_rotation_degrees", 0) or 0
+2525: getattr(self, "display_flip_horizontal", False)
+2528: getattr(self, "display_flip_vertical", False)
+2530: "transpose": bool(
+2531: getattr(self, "display_transpose", False)
+2536: """Apply the same rotation/flip/transpose state to edge labels."""
+2539: if transform.get("transpose"):
+2708: return np.rot90(array, 1)
+2710: return np.rot90(array, -1)
+2712: return np.fliplr(array)
+2714: return np.flipud(array)

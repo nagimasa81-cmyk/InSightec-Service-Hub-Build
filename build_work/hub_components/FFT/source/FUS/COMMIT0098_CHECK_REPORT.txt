@@ -1,0 +1,26 @@
+MR Image Explorer RC1 Commit0098 Triple Check Report
+=====================================================
+
+Fix
+- Advanced Compensation Tuning controls are no longer disabled by an unchecked QGroupBox.
+- Group is non-checkable and always enabled.
+- Added Conservative / Balanced / Aggressive / Expert presets.
+- Any manual parameter edit switches the preset to Expert.
+- Current painted mask is preserved after tuning changes.
+- Preview applies current values without rerunning Auto Detection.
+- Mask expansion, donor halo and pass count are also applied to mask-model rebuild.
+
+Check 1: Functional and regression tests
+- 37 tests passed.
+- Includes Commit0087-Commit0098 compensation, Poisson, detection, mask editing and UI static checks.
+
+Check 2: Python source compile
+- All Python source files compiled successfully.
+
+Check 3: Package integrity
+- ZIP archive test passed.
+- Version metadata and build scripts present.
+
+Environment limitation
+- PySide6 is unavailable in the Linux validation environment.
+- Windows GUI runtime and Nuitka EXE build require final real-machine verification.

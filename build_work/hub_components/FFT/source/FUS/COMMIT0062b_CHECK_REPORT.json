@@ -1,0 +1,11 @@
+{
+  "commit": "Commit0062b_Available_Component_Menu_Filter",
+  "checks": {
+    "original_real_array_magnitude_only": true,
+    "original_complex_array_components_visible": true,
+    "fft_components_include_log_magnitude": true,
+    "unavailable_items_not_created": true,
+    "component_change_resets_target_levels": true,
+    "original_fft_selection_independent": true
+  }
+}

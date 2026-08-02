@@ -1,0 +1,10 @@
+Commit0108 Check Report
+
+- app.py syntax / py_compile: PASS
+- compileall: PASS
+- Focused regression tests (Commit0104-0108): 19 passed
+- Direct Expert/Paint review rebuild path: PASS
+- Result mode Auto Correct visibility transition: PASS
+- More > Run Auto Correct Again wiring: PASS
+- Commit0107 single-pass Quick Adjust tests: PASS
+- ZIP CRC integrity: checked after packaging

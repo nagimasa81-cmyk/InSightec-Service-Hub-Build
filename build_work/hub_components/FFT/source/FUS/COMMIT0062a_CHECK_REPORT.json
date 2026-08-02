@@ -1,0 +1,11 @@
+{
+  "commit": "Commit0062a_ImagePanel_Startup_Hotfix",
+  "issue": "AttributeError: 'ImagePanel' object has no attribute 'plot' during EXE startup",
+  "root_cause": "ImagePanel.__init__ called self.plot.setFocusPolicy before self.plot was created",
+  "fix": "Create pg.PlotWidget first, then apply its focus policy",
+  "checks": [
+    "Python compile",
+    "startup-order regression test",
+    "ZIP integrity"
+  ]
+}

@@ -1,0 +1,36 @@
+MR Image Explorer RC1 Commit0097 Check Report
+==============================================
+Version: 5.26.0 RC1 Commit0097
+
+Implemented
+-----------
+1. Auto Mask normal-signal guard
+   - Smooth radial k-space signal protection
+   - Central readout/phase-encoding axis protection
+   - Strong local artifact evidence can override the soft guard
+   - Conservative/Balanced/Sensitive Auto Mask modes
+2. Advanced Compensation Tuning subfunction
+   - Auto Mask sensitivity
+   - Mask expansion
+   - Donor halo
+   - Compensation passes
+   - Blend strength
+   - Normal signal preservation
+   - Frequency-aware weighting toggle
+   - Guided Poisson toggle
+   - Hermitian symmetry toggle
+   - Reset Advanced Settings
+3. Use Painted Mask / Clear Paint layout retained in the same row
+4. Existing edited-mask reconstruct workflow retained
+
+Validation
+----------
+- Python syntax/compileall: PASS
+- Commit0097 tests: PASS
+- Regression tests Commit0087-0095: PASS
+- Total selected tests: 30 passed
+- ZIP integrity: verified after packaging
+
+Environment limitation
+----------------------
+PySide6 GUI runtime and Windows Nuitka build require Windows real-machine verification.

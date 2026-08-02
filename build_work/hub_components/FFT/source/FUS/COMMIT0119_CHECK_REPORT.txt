@@ -1,0 +1,14 @@
+Commit0119 Check Report
+
+Focused guide test: PASS
+Python py_compile app.py: PASS
+Python compileall: PASS
+AST parse: PASS
+Guide startup routing markers: PASS
+Normal guide pages: PASS
+Optional Raw Data Compensation offer: PASS
+Guide Library and Help menu markers: PASS
+Exit checkboxes default OFF: PASS
+Single closeEvent implementation: PASS
+
+Legacy version-pinned tests are not applicable to Commit0119. Commit0115 blob-acceptance tests intentionally fail because Commit0116 restored the Commit0114 detection algorithm.

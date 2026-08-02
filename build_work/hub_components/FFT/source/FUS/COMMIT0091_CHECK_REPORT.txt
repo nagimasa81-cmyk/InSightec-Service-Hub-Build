@@ -1,0 +1,13 @@
+Commit0091 verification
+
+Implemented:
+- MRI Auto Detection v2
+- Confidence-weighted Auto Mask v2
+- Replace/Add Paint GUI policy
+- DC protection and Hermitian mask pairing
+
+Validation:
+- Python compile: PASS
+- Hybrid/Poisson/Frequency-aware/Auto Detection tests: 12 PASS
+- ZIP integrity: pending packaging check
+- Windows PySide6 GUI runtime: requires user real-machine evaluation

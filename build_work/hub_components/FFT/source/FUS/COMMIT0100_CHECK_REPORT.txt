@@ -1,0 +1,14 @@
+MR Image Explorer RC1 Commit0100 Check Report
+
+1. Stage-2 artifact validation tests: PASS
+2. Commit0090-0099 selected regression tests: PASS
+3. All Python source compile check: PASS
+4. Explicit Auto checkbox controls retained: PASS
+5. ZIP integrity check: pending packaging
+
+Implemented:
+- Candidate Detection -> Artifact Validation -> Core Mask -> compactness governor
+- correction benefit vs normal structure risk scoring
+- per-type coverage ceilings
+- final post-Hermitian coverage limiting
+- explicit Auto checkboxes for numeric advanced controls

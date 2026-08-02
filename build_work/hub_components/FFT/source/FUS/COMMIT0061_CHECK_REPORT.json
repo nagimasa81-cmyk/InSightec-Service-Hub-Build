@@ -1,0 +1,16 @@
+{
+  "commit": "Commit0061_Series_Layout_Mouse_Orientation_Sync",
+  "checks": {
+    "python_compile": "passed",
+    "series_local_navigation": "passed by structural regression test",
+    "layout_preservation": "passed by structural regression test",
+    "standard_mouse_mapping": "passed by structural regression test",
+    "context_menu_cleanup": "passed by structural regression test",
+    "orientation_pixel_label_shared_transform": "passed by structural regression test"
+  },
+  "manual_validation_required": [
+    "Confirm exact wheel direction on the Windows test PC",
+    "Confirm axial/coronal/sagittal image anatomy agrees with edge labels",
+    "Confirm malformed DICOM exports do not reuse all visible series metadata"
+  ]
+}

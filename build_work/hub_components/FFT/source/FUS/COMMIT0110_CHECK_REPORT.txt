@@ -1,0 +1,18 @@
+Commit0110 Check Report
+
+Syntax / compilation
+- app.py py_compile: PASS
+- core/auto_correct.py py_compile: PASS
+- compileall project: PASS
+
+Focused regression tests
+- Commit0103 through Commit0110 focused tests: 29 PASS
+
+Functional additions checked
+- Off-centre Blob detector detects a synthetic broad bright component: PASS
+- DC centre exclusion: PASS
+- Session status UI text and retained-mask handoff paths: PASS
+- Commit/version metadata: PASS
+
+Packaging
+- ZIP integrity tested after creation.

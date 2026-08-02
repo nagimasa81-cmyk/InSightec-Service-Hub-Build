@@ -1,0 +1,38 @@
+Commit0116 Check Report
+=======================
+
+Scope
+-----
+- Restore Auto Correct detection/acceptance behavior to Commit0114.
+- Retain Commit0115 crosshair safety and safer High/Extreme reconstruction presets.
+
+Triple Check
+------------
+1. Detection rollback identity
+   - core/auto_correct.py SHA-256 matches the Commit0114 reference exactly.
+   - Commit0115-only _blob_mask_geometry and paired_edge_blob logic are absent.
+
+2. Syntax / compilation
+   - Python AST files checked: 115
+   - AST errors: 0
+   - py_compile app.py and core/auto_correct.py: PASS
+   - compileall: PASS
+
+3. Focused / regression tests
+   - 42 tests passed.
+   - 4 historical tests failed only because they assert old commit/version strings or an obsolete preview_compensation call token.
+   - Commit0116 focused rollback and crosshair tests: PASS.
+
+Functional Retention
+--------------------
+- Crosshairs hidden on every newly constructed ImagePanel: retained.
+- Difference synchronized cursor default OFF: retained.
+- Candidate Viewer: retained.
+- Expert Auto Mask Once: retained.
+- Quick Adjust single-trial behavior: retained.
+- Paint/Expert mask handoff and direct Review: retained.
+- Safer High/Extreme compensation presets: retained.
+
+Known Validation Boundary
+-------------------------
+This environment cannot execute the packaged Windows EXE or validate the real scanner RAW dataset. Source-level, algorithm-identity, syntax, and ZIP-integrity checks were completed.

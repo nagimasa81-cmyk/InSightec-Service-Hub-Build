@@ -1,0 +1,11 @@
+Commit0111 Check Report
+
+PASS: app.py and core/auto_correct.py syntax compilation
+PASS: compileall across source tree
+PASS: Commit0103-0109 and Commit0111 focused tests: 30 passed
+PASS: Commit0110 functional tests excluding superseded fixed-version assertion: 2 passed
+EXPECTED LEGACY MISMATCH: test_commit0110_detection_session.py::test_commit_version_metadata asserts commit 0110, while this package is Commit0111.
+PASS: Quick Adjust existing-mask path uses recalculate_with_mask exactly once
+PASS: Quick Adjust empty-mask path uses one run_auto_correct trial
+PASS: Quick Adjust empty-mask path does not call auto_correct_with_retry
+PASS: No-candidate path keeps Quick Adjust available and directs user to adjust sliders or use Paint/Expert

@@ -1,0 +1,12 @@
+{
+  "commit": "Commit0064_Independent_Panels_View_State_Raw_Navigation",
+  "checks": {
+    "python_compile": "passed",
+    "targeted_regression_tests": "25 passed",
+    "original_fft_order": "Original left / FFT right",
+    "crosshair_state": "independent",
+    "profiles": "4 plots; equal-height horizontal/vertical per panel",
+    "raw_view_mode": "preserved; duplicate deferred Both refresh removed",
+    "raw_arrow_navigation": "tree-order fallback with expand/collapse"
+  }
+}

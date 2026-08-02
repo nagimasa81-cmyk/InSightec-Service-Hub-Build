@@ -1,0 +1,21 @@
+MR Image Explorer Commit0096 Check Report
+
+Implemented
+- Crosshair is hidden while Crosshair Profile Charts is collapsed.
+- Crosshair appears on both Original and FFT panels when profiles are expanded.
+- Block Detection v4 detects fragmented aligned rectangular lobes with anisotropic grouping.
+- Original moderate rectangular components are scored separately so grouped bars do not become one sparse mega-component.
+- Thin-line rejection remains active through minimum thickness and aspect-ratio checks.
+- Clear Paint is positioned beside 2. Use Painted Mask.
+
+Validation
+- Python syntax compilation: PASS
+- Commit0096 focused tests: PASS
+- Commit0095 diagonal regression: PASS
+- Commit0094 editable-mask reconstruction regression: PASS
+- Commit0093 Spike/Block regression: PASS
+- Selected regression total: 15 passed
+- ZIP integrity: pending packaging verification
+
+Environment limitation
+- PySide6/Nuitka Windows GUI runtime was not executed in this Linux container.

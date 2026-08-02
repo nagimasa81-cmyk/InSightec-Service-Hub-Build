@@ -1,0 +1,12 @@
+Commit0117 Check Report
+
+- app.py py_compile: PASS
+- Python AST scan: PASS
+- compileall: PASS
+- Dedicated brush-size down/up controls present: PASS
+- Auto-repeat on dedicated controls: PASS
+- Native spin arrows explicitly enabled: PASS
+- Brush cursor is an image-space ellipse: PASS
+- Cursor diameter linked to manual_brush_size: PASS
+- Brush/Eraser cursor mode handling: PASS
+- Commit0116 Auto Correct source left unchanged: PASS

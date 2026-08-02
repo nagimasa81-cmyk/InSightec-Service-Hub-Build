@@ -1,0 +1,8 @@
+Commit0122 - Quick Spike Execution and Series Open Fix
+
+1. Quick Spike Detect now performs four visible stages per image:
+   prepare, FFT, stripe mapping, and robust k-space validation.
+2. The result dialog reports execution status, image count, stage count, errors, and elapsed time.
+3. Robust local-MAD spike and abnormal row/column detection replaces the overly minimal sparse check.
+4. Clicking a collapsed Series expands it and opens its first DICOM image.
+5. version.json, BUILD_INFO.txt, and APP_VERSION updated to 5.51.0 / Commit0122.

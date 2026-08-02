@@ -1,0 +1,12 @@
+{
+  "commit": "Commit0076",
+  "python_compile": "PASS",
+  "focused_tests": {"passed": 4, "failed": 0},
+  "changes": [
+    "Disabled full-row, full-column, and oblique-line proposals for DICOM-derived k-space",
+    "Added compact two-scale DoG-like blob extraction",
+    "Retained conjugate-pair and candidate-only IFFT validation",
+    "Added confidence-weighted selective ROI compensation",
+    "Preserved DC cross and unchanged ROI pixels"
+  ]
+}

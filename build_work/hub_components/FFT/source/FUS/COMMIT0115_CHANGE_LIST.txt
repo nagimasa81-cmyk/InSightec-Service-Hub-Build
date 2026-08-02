@@ -1,0 +1,8 @@
+Commit0115 Change List
+
+1. Reliable rejected edge-Blob candidates can now be accepted automatically when geometry, confidence, artifact reduction and image-change guards pass.
+2. Candidate records now include edge_fraction, pair_support and axis_fraction.
+3. Edge-dominant Blob masks suppress narrow centre-axis bridges before compensation.
+4. High/Extreme manual profiles use bounded expansion, donor halo and stripe suppression.
+5. Every ImagePanel starts with crosshairs hidden. Difference-view cursor synchronization is off by default.
+6. Candidate Viewer displays Blob geometry metrics.

@@ -1,0 +1,29 @@
+......F........FF..                                                      [100%]
+=================================== FAILURES ===================================
+_________________________________ test_version _________________________________
+
+>   ???
+E   assert '"commit": "0112"' in '{\n  "version": "5.44.0",\n  "stage": "RC1",\n  "commit": "0115",\n  "name": "Blob Acceptance and Crosshair Safety",\n  "build": "RC1 Commit0115"\n}\n'
+E    +  where '{\n  "version": "5.44.0",\n  "stage": "RC1",\n  "commit": "0115",\n  "name": "Blob Acceptance and Crosshair Safety",\n  "build": "RC1 Commit0115"\n}\n' = read_text()
+E    +    where read_text = (PosixPath('/mnt/data/commit0115_work/commit0110_work') / 'version.json').read_text
+
+/mnt/data/commit0112_work/commit0110_work/test_commit0112_expert_auto_mask.py:7: AssertionError
+_______________________ test_button_and_version_updated ________________________
+
+>   ???
+E   assert '5.40.0 RC1 Commit0111' in 'from __future__ import annotations\n\nimport csv\nimport json\nimport os\nimport copy\nimport shutil\nimport sys\nimp...xcept Exception:\n            pass\n\n        return 1\n\n\nif __name__ == "__main__":\n    raise SystemExit(main())\n'
+
+/mnt/data/commit0111/commit0110_work/test_commit0111_quick_adjust_single_trial.py:32: AssertionError
+_________________________ test_commit_version_metadata _________________________
+
+>   ???
+E   assert '"commit": "0110"' in '{\n  "version": "5.44.0",\n  "stage": "RC1",\n  "commit": "0115",\n  "name": "Blob Acceptance and Crosshair Safety",\n  "build": "RC1 Commit0115"\n}\n'
+
+/mnt/data/commit0111/commit0110_work/test_commit0110_detection_session.py:9: AssertionError
+=========================== short test summary info ============================
+FAILED test_commit0112_expert_auto_mask.py::test_version - assert '"commit": "0112"' in '{\n  "version": "5.44.0",\n  "stage": "RC1",\n  "commit": "0115",\n  "name": "Blob Acceptance and Crosshair Safety",\n  "build": "RC1 Commit0115"\n}\n'
+ +  where '{\n  "version": "5.44.0",\n  "stage": "RC1",\n  "commit": "0115",\n  "name": "Blob Acceptance and Crosshair Safety",\n  "build": "RC1 Commit0115"\n}\n' = read_text()
+ +    where read_text = (PosixPath('/mnt/data/commit0115_work/commit0110_work') / 'version.json').read_text
+FAILED test_commit0111_quick_adjust_single_trial.py::test_button_and_version_updated - assert '5.40.0 RC1 Commit0111' in 'from __future__ import annotations\n\nimport csv\nimport json\nimport os\nimport copy\nimport shutil\nimport sys\nimp...xcept Exception:\n            pass\n\n        return 1\n\n\nif __name__ == "__main__":\n    raise SystemExit(main())\n'
+FAILED test_commit0110_detection_session.py::test_commit_version_metadata - assert '"commit": "0110"' in '{\n  "version": "5.44.0",\n  "stage": "RC1",\n  "commit": "0115",\n  "name": "Blob Acceptance and Crosshair Safety",\n  "build": "RC1 Commit0115"\n}\n'
+3 failed, 16 passed in 5.84s

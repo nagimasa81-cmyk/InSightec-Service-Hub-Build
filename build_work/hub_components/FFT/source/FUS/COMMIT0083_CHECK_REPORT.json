@@ -1,0 +1,17 @@
+{
+  "commit": "0083",
+  "title": "Navigation and Lazy Cache Foundation",
+  "changes": [
+    "Reusable thread-safe LRU key cache added under core/cache_engine.py",
+    "DICOM decoded-pixel cache migrated from ad-hoc list trimming to LRU policy",
+    "Header-only DICOM import and on-demand pixel decoding preserved",
+    "DICOM navigation location lookup changed from repeated linear scans to indexed maps",
+    "Compatibility cache-order mirror retained for existing diagnostics"
+  ],
+  "risk_control": [
+    "No visual layout changes",
+    "No decoder plugin changes",
+    "No change to Transfer Syntax selection",
+    "Header datasets remain resident when pixel arrays are evicted"
+  ]
+}

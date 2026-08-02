@@ -1,0 +1,15 @@
+{
+  "commit": "Commit0074",
+  "title": "Step-by-Step Spike Review Mode",
+  "base": "Commit0073 Frame Lock",
+  "checks": {
+    "python_compile": "PASS",
+    "focused_tests": "4/4 PASS",
+    "frame_lock_retained": true,
+    "seven_review_steps": true,
+    "all_proposals_visible": true,
+    "candidate_ifft_review": true,
+    "explicit_dicom_raw_limitation": true
+  },
+  "runtime_note": "Windows/PySide6 EXE and supplied DICOM visual verification remain required."
+}

@@ -1,0 +1,18 @@
+MR Image Explorer RC1 Commit0092 Check Report
+
+Version: 5.21.0 RC1 Commit0092
+
+Implemented:
+- Auto Detection v3 with 10% hard DC-centre protection.
+- 18% centre transition zone requiring stronger evidence.
+- Auto Mask remains editable after generation.
+- Eraser removes selected pixels from manual or automatic masks.
+- Remove Component deletes one connected mask island by clicking it.
+- Manual Only mode bypasses Auto Detection completely.
+- Brush/Line/Band/Block/Ring manual tools retained.
+
+Validation:
+- Python compile: PASS
+- Auto Detection / Auto Mask / Poisson / Hybrid regression: 22 PASS
+- ZIP integrity: pending package step
+- Windows GUI runtime: requires user machine validation

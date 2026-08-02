@@ -1,0 +1,15 @@
+{
+  "commit": "0075",
+  "checks": {
+    "python_compile": "passed",
+    "pytest": "7 passed"
+  },
+  "features": [
+    "derived k-space cluster candidate detector",
+    "normal full-span line rejection",
+    "adaptive selective ROI outlier compensation",
+    "DC cross protection",
+    "cosine feathering",
+    "conjugate symmetry preservation"
+  ]
+}

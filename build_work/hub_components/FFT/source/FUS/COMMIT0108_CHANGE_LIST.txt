@@ -1,0 +1,8 @@
+Commit0108 — Result Mode and Direct Review
+
+1. Hide Auto Correct after successful result installation.
+2. Show Result actions: OK, Quick Adjust, Paint, Expert.
+3. Add More... > Run Auto Correct Again.
+4. Expert/Paint Review rebuilds from Current Mask + current Expert settings on every click.
+5. Remove Preview-as-prerequisite behavior from the direct review path.
+6. Preserve Commit0107 Current Mask + Quick Adjust single-pass recalculation.

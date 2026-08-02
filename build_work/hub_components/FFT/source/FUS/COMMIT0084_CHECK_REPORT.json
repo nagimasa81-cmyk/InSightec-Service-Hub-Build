@@ -1,0 +1,12 @@
+{
+  "commit": "Commit0084",
+  "base": "Commit0083",
+  "scope": [
+    "bounded FFT cache",
+    "cache hit statistics",
+    "opt-in timing diagnostics"
+  ],
+  "ui_changes": false,
+  "background_thumbnail_loader": "not introduced in this commit to avoid UI-thread regression",
+  "exe_runtime_validation": "pending user build"
+}

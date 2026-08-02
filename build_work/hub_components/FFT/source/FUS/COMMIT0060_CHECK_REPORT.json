@@ -1,0 +1,23 @@
+{
+  "commit": "Commit0060_Orientation_UI_GE_Display",
+  "base": "Commit0059_Orientation_Engine_v2",
+  "syntax_check": "passed",
+  "tests": {
+    "result": "passed",
+    "count": 7
+  },
+  "changes": [
+    "Orientation toolbar button opens a raised application-modal editor with error feedback",
+    "Axial default: Top A, Bottom P, Left L, Right R",
+    "Coronal default: Top S, Bottom I, Left L, Right R",
+    "Sagittal default: Top S, Bottom I, Left P, Right A",
+    "Apply refreshes images, orientation labels, annotations, and button state"
+  ],
+  "unchanged_scope": [
+    "Original/FFT/Both rendering architecture",
+    "FFT calculation",
+    "raw import",
+    "window-level",
+    "zoom and pan"
+  ]
+}

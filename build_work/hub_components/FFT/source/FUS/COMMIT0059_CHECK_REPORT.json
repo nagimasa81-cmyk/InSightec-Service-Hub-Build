@@ -1,0 +1,18 @@
+{
+  "commit": "Commit0059_Orientation_Engine_v2",
+  "base": "Commit0057f_Display_Pipeline_Orientation_Sync",
+  "status": "PASS",
+  "changes": [
+    "Added standalone Orientation Engine v2",
+    "Corrected ImageOrientationPatient row/column interpretation",
+    "Synchronized labels with pyqtgraph upward-positive Y coordinates",
+    "Kept Original/FFT/Both rendering pipeline unchanged",
+    "Added axial, flip, conventional raster and oblique regression tests"
+  ],
+  "expected_axial_labels": {
+    "top": "P",
+    "bottom": "A",
+    "left": "R",
+    "right": "L"
+  }
+}

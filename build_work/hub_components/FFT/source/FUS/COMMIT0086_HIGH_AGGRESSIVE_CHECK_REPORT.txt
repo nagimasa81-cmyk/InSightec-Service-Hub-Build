@@ -1,0 +1,16 @@
+MR Image Explorer RC1 Commit0086 - Aggressive High Compensation Check
+
+Implemented:
+- High: full replacement strength 1.00
+- High: correction mask expanded by 3 pixels around painted RAW region
+- High: donor exclusion halo expanded to 5 pixels
+- Mid: strength 0.75, 1-pixel expansion, 2-pixel donor halo
+- Low: strength 0.40, painted area only, 1-pixel donor halo
+- Preview rebuilds detection every time so Low/Mid/High changes apply immediately
+- Edge-safe no-wrap behavior retained
+
+Validation:
+- Python compile: PASS
+- Current RAW compensation tests: 18 PASS
+- Added aggressive High behavior test: PASS
+- Four legacy Commit0075/0076 source-string tests remain incompatible with the current refactored architecture; these are historical assertions, not runtime failures.

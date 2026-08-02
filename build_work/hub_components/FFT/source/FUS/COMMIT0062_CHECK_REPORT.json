@@ -1,0 +1,11 @@
+{
+  "commit": "Commit0062_Independent_Image_Component_Continuous_Series_Navigation",
+  "checks": {
+    "python_compile": "passed",
+    "targeted_regression_tests": "14 passed",
+    "profile_right_panel_removed": "passed",
+    "independent_original_fft_component_selection": "passed",
+    "continuous_series_boundary_navigation": "passed",
+    "explorer_expand_collapse_follow": "passed"
+  }
+}

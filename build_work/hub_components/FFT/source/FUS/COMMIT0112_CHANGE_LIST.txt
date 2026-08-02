@@ -1,0 +1,11 @@
+Commit0112 Change List
+
+1. Difference dialog single-instance enforcement and Expert Review one-pass flow.
+2. Expert spin controls fixed: arrows, keyboard and direct entry remain active; manual edit disables Auto for that parameter.
+3. Expert Run Auto Mask Once with Replace / Merge / Cancel.
+4. Candidate Viewer for latest Auto Correct / Expert Auto Mask candidates.
+5. Robust adaptive threshold adjustment using FFT median/MAD and high-tail ratio.
+6. Candidate score combines quality, confidence, shape preference and mask coverage.
+7. Quality metrics include edge preservation and mask coverage.
+8. Paint mask Undo/Redo, symmetry, expand, shrink, fill-largest and delete-smallest operations.
+9. Commit0111 Quick Adjust and mask handoff behavior preserved.

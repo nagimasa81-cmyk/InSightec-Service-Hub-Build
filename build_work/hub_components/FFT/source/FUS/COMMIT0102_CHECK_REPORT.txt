@@ -1,0 +1,19 @@
+MR Image Explorer RC1 Commit0102 Check Report
+
+Implemented
+- Auto / Paint / Expert tabs in ROI Raw Data Compensation.
+- Auto tab is the default primary workflow.
+- Quick Adjust is collapsed by default.
+- Manual Paint controls moved to Paint tab.
+- Advanced compensation controls moved to Expert tab.
+- Dedicated Auto Correct progress dialog with 520 px minimum width.
+- App/version/build metadata updated to 5.31.0 RC1 Commit0102.
+
+Validation
+- Python syntax compile: PASS
+- compileall: PASS
+- Commit0101 + Commit0102 tests: 3 PASS
+- Source ZIP integrity: pending during packaging
+
+Environment limitation
+- PySide6 is not installed in the packaging environment, so live Qt window instantiation was not available.

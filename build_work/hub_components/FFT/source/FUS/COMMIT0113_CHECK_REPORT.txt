@@ -1,0 +1,16 @@
+Commit0113 Triple Check Report
+
+1. Syntax / compilation
+   - Python AST: PASS
+   - py_compile app.py and core/auto_correct.py: PASS
+   - compileall: PASS
+2. Functional source checks
+   - Candidate Viewer interactive UI: PASS
+   - Candidate mask carried in result records: PASS
+   - Apply Candidate / Continue in Paint paths: PASS
+   - Expert spin arrow width and native button symbols: PASS
+   - Auto-off on manual value change: PASS
+   - Multi-scale Blob synthetic detection: PASS
+   - DC centre exclusion: PASS
+3. Package
+   - ZIP CRC: pending final package check

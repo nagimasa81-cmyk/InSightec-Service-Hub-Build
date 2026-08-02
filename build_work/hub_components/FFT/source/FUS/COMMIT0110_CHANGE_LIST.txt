@@ -1,0 +1,19 @@
+Commit0110 - Detection and Session Stability
+
+1. Auto Correct detection
+   - Added a conservative Blob detector for broad off-centre high-energy regions.
+   - Excludes the DC centre and isolated pixels.
+   - Applies area and compactness guards to avoid normal encoding energy.
+   - Blob candidates use the existing validated virtual-compensation and quality-ranking path.
+
+2. Unified current-session visibility
+   - Added a Session status panel.
+   - Shows current mask region count and pixel count.
+   - Shows current Artifact Removal, Image Detail, and Protection values.
+   - Shows whether the reconstructed preview is current or needs recalculation.
+
+3. Workflow continuity
+   - Auto Correct result remains the restore point.
+   - Quick Adjust recalculates once from original RAW + current mask + current values.
+   - Paint and Expert use Start Manual Paint-equivalent state and retain the current Auto mask.
+   - Editing the mask marks the preview as needing recalculation without losing the mask.

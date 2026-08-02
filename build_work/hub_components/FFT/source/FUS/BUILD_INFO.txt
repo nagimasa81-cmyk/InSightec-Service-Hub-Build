@@ -1,0 +1,16 @@
+MR Image Explorer
+Version: 5.51.0
+Stage: RC1
+Commit: 0122
+Build: Quick Spike Execution and Series Open Fix
+
+Quick Spike Detect
+- Always builds the FFT for every analyzed image.
+- Runs stripe extraction, robust local-MAD point/line detection, and symmetry validation.
+- Reports whether analysis completed, images analyzed, completed stages, errors, and elapsed time.
+- Distinguishes a completed zero-candidate result from a skipped or failed analysis.
+- Full Blob/Band/Ring candidate generation remains in Artifact Diag.
+
+Explorer Series Selection
+- Clicking a collapsed Series expands it automatically.
+- The first image in the Series is selected, scrolled into view, and displayed immediately.

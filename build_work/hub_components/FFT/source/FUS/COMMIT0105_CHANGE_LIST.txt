@@ -1,0 +1,8 @@
+Commit0105 Change List
+
+1. Added a shared Auto Correct-to-manual handoff routine.
+2. Paint now retains the Auto Correct mask and starts from the Start Manual editing state.
+3. Expert now retains the same mask and starts from the same manual editing state.
+4. Original RAW/k-space is restored for editing while the generated mask remains visible.
+5. Use Painted Mask and Preview remain available for the retained mask.
+6. Updated version.json, BUILD_INFO, README, and validation report.

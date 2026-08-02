@@ -1,0 +1,19 @@
+{
+  "commit": "Commit0060a_Orientation_Button_AP_Series_Navigation_Hotfix",
+  "version": "5.10.1",
+  "fixes": [
+    "Orientation button TypeError fixed by optional dataset argument",
+    "Removed duplicate vertical orientation-label inversion; axial top A / bottom P",
+    "Previous/Next restricted to current DICOM SeriesInstanceUID",
+    "Slice counter and navigation enabled state use current series only"
+  ],
+  "unchanged": [
+    "DICOM import",
+    "FFT",
+    "Original/Both rendering",
+    "window-level",
+    "zoom",
+    "pan"
+  ],
+  "tests": "11 passed (Commit0059, Commit0060, Commit0060a targeted regression suite)"
+}

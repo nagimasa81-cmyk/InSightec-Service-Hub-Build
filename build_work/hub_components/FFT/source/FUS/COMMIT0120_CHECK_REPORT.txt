@@ -1,0 +1,9 @@
+MR Image Explorer RC1 Commit0120 Check Report
+
+- app.py py_compile: PASS
+- core auto_correct/hybrid_compensation py_compile: PASS
+- compileall complete source: PASS
+- focused diagnostic/tracker/guide static checks: PASS
+- version metadata: 5.49.0 / Commit0120
+- Tracker drop routing: Tracker Signal tab (index 3)
+- Guide WIP notices: present

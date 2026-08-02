@@ -1,0 +1,11 @@
+Commit0116 Change List
+======================
+
+1. Restored core/auto_correct.py from Commit0114.
+2. Removed Commit0115 Blob acceptance relaxations and geometry-weighted auto-selection.
+3. Removed Commit0115 centre-axis bridge modification from generated masks.
+4. Retained crosshair initial-hidden behavior across every ImagePanel.
+5. Retained Difference viewer synchronized cursor default OFF.
+6. Retained Candidate Viewer and all Commit0111-0114 workflow improvements.
+7. Retained safer High / Extreme compensation presets to reduce central-line amplification.
+8. Updated version metadata to 5.45.0 / Commit0116.

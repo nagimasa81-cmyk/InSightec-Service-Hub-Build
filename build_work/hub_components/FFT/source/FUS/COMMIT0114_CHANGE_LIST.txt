@@ -1,0 +1,10 @@
+Commit0114 Change List
+
+1. Added edge-band adaptive Blob seeds for cropped left/right/top/bottom blobs.
+2. Added three-scale local background and soft-blob contrast detection.
+3. Replaced wrap-around growth with non-wrapping neighbor propagation.
+4. Added edge-component and Hermitian mirrored-pair support.
+5. Increased broad Blob region-growing coverage while protecting DC centre.
+6. Added Blob-specific bounded validation thresholds to reduce false rejection.
+7. Added synthetic regression tests for four edge blobs and DC exclusion.
+8. Updated version.json, APP_VERSION, BUILD_INFO and README.

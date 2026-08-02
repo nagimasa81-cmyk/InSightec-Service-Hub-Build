@@ -1,0 +1,19 @@
+Commit0113 Change List
+
+1. Product-level Auto Correct Candidate Viewer
+   - All / Accepted / Rejected filtering
+   - Candidate list with score, confidence, coverage and reason
+   - FFT and mask previews
+   - Apply candidate
+   - Apply and continue in Paint
+2. Expert spin control repair
+   - Mask Expansion
+   - Donor Halo
+   - Compensation Passes
+   - Wider clickable up/down arrow areas
+   - Keyboard and direct-entry support
+3. Blob detection improvement
+   - Adaptive robust global threshold
+   - Multi-scale local contrast
+   - Region growing
+   - Broader area/fill acceptance while preserving DC and large-structure guards

@@ -1,0 +1,27 @@
+MR Image Explorer RC1 Commit0103 Change List
+
+1. Auto Correct orchestration
+- Added six automatic retry trials around the existing Auto Correct engine.
+- Did not refactor candidate detection, validation, compensation, or quality calculation.
+
+2. Trial presets
+- Trial 1: Removal 50 / Detail 75 / Protection 85
+- Trial 2: Removal 60 / Detail 75 / Protection 75
+- Trial 3: Removal 70 / Detail 75 / Protection 65
+- Trial 4: Removal 80 / Detail 75 / Protection 55
+- Trial 5: Removal 90 / Detail 75 / Protection 45
+- Trial 6: Removal 100 / Detail 75 / Protection 35
+
+3. Retry and selection
+- Retry when no validated candidate exists or Quality is below 60.
+- Best Quality selected after all completed trials.
+- Tie-break order: lower Image Change, lower Residual Artifact, higher Detail Preservation, higher Artifact Reduction.
+
+4. UI
+- Progress shows Searching Artifacts, Trial n / 6, and Evaluating Quality.
+- Reliable result completes without requiring Quick Adjust.
+- Unreliable final result offers Manual Paint, Expert Settings, and Close.
+
+5. Metadata
+- version.json updated to Commit0103 / version 5.32.0.
+- BUILD_INFO.txt and README.md updated.

@@ -1,0 +1,31 @@
+MR Image Explorer Commit0090 Check Report
+==========================================
+
+Scope
+- Clear Paint visible/logical state reset
+- Frequency-aware Hybrid Compensation v2
+- Regression of Manual Inpaint, Background Model, Hybrid Engine,
+  and Guided Poisson Solver
+
+Implemented Clear Paint behavior
+- Replaces logical mask with a new all-False array
+- Replaces cached overlay with a transparent RGBA image
+- Hides overlay and forces plot/viewport repaint
+- Resets detection and ROI bounds
+- Resets compensation preview and Difference arrays
+- Disables Difference reopen, Preview, and Apply until a new mask is detected
+
+Frequency-aware Hybrid v2
+- Adaptive Low/Mid/High spectral bands
+- Per-band gain estimated from masked artifact energy
+- DC protection for anatomical contrast preservation
+- Horizontal/Vertical direction-aware spectral emphasis
+- Metadata stored as adaptive_three_band_directional_v2
+
+Validation
+- Python compilation: PASS
+- Non-GUI targeted regression tests: PASS (see COMMIT0090_TEST_RESULTS.txt)
+- Clear Paint GUI wiring: static source test PASS
+- PySide6 GUI runtime test: not executable in this Linux environment because PySide6 is unavailable
+- ZIP integrity: PASS
+- Windows EXE GUI runtime: requires user real-machine evaluation

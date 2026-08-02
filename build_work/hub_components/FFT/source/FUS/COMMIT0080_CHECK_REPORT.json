@@ -1,0 +1,20 @@
+{
+  "commit": "Commit0080",
+  "version": "5.16.30",
+  "result": "PASS",
+  "changes": [
+    "Removed startup decoder pre-imports",
+    "Removed pydicom_nuitka_plugins runtime anchor",
+    "Added transfer-syntax-aware lazy decoder selection",
+    "Removed GDCM module inclusion",
+    "Kept pydicom and pylibjpeg codec packaging in Nuitka build configuration",
+    "Added focused unsupported-codec errors without terminating the viewer"
+  ],
+  "validation": {
+    "python_compile": "PASS",
+    "targeted_regression_tests": "13 passed",
+    "fake_uncompressed_decode_path": "PASS",
+    "zip_integrity": "PENDING"
+  },
+  "note": "Very old commit tests contain hard-coded historical version strings and are not suitable as a full-suite release gate. Commit0076-0080 targeted regression tests were used."
+}

@@ -1,0 +1,9 @@
+Commit0085e validation
+- Base: Commit0085d / Commit0084 stable startup and build configuration preserved
+- Manual RAW compensation changed from bounding-box interpolation to true painted-shape neighbour inpainting
+- Manual paint strength no longer attenuated by bounding-box sine taper
+- RAW Before/After uses the same display scale during Preview
+- Status reports painted-pixel mean before/after and maximum absolute RAW delta
+- Python compileall: PASS
+- Focused tests: 4 passed
+- Windows/Nuitka runtime: not tested in this container

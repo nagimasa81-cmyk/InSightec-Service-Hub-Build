@@ -1,0 +1,17 @@
+{
+  "commit": "Commit0070",
+  "base": "Commit0069",
+  "dataset": "DICOMtest.zip supplied by user",
+  "changes": [
+    "Directional k-space line detector retains central-axis evidence while excluding only a compact DC box",
+    "Complete abnormal rows and columns are interpolated instead of correcting sparse points only",
+    "Image-space stripe evidence and directional k-space evidence are combined",
+    "Image Workspace selected-image rendering is atomic to remove transient reset frames",
+    "Image selection and Display Reset share centered Fit and equal Both-panel geometry"
+  ],
+  "validation": {
+    "python_compile": "passed",
+    "focused_tests": "16 passed",
+    "zip_integrity": "pending packaging"
+  }
+}

@@ -1,0 +1,17 @@
+Commit0117 Change List
+
+1. Brush size spin box
+   - Enabled native Up/Down arrows explicitly.
+   - Increased arrow hit areas and widget width.
+   - Added dedicated ▼ and ▲ auto-repeat buttons.
+   - Preserved direct input and keyboard Up/Down operation.
+
+2. Circular paint cursor
+   - Added an image-coordinate ellipse overlay.
+   - Diameter follows the current brush size.
+   - Remains correct under zoom and pan.
+   - Brush uses yellow outline; Eraser uses red outline.
+   - Hidden for non-circular tools and when manual editing is inactive.
+
+3. Scope control
+   - Auto Correct detection and acceptance algorithms are unchanged from Commit0116.

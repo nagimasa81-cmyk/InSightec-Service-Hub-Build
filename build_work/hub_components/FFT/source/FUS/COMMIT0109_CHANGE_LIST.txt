@@ -1,0 +1,17 @@
+MR Image Explorer RC1 Commit0109
+
+1. Quick Adjust after Auto Correct
+- Recalculate Once always uses the untouched original RAW/k-space baseline.
+- Uses the current Auto Correct / painted mask and current Quick Adjust slider values.
+- Runs exactly one reconstruction; no candidate detection and no retry.
+- Quick Adjust no longer overwrites the saved Auto Correct restore point.
+
+2. Paint / Expert handoff
+- Paint and Expert enter the same editable state as Start Manual Paint.
+- The untouched original RAW/k-space is restored for editing.
+- When Auto Correct generated a mask, that mask is retained and remains editable.
+- Current edited masks are preserved when moving between Paint and Expert.
+
+3. Result state
+- Auto Correct result remains available through Restore Auto Result after Quick Adjust.
+- Review and Apply use the newly reconstructed result.

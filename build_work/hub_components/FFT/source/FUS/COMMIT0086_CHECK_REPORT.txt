@@ -1,0 +1,11 @@
+Commit0086 validation
+- Base: Commit0085e preserved
+- Removed opposite-edge contamination from manual RAW neighbour inpainting
+- Replaced wrap-around mask dilation with edge-safe shifting
+- Manual painted masks now support true first/last row and column pixels
+- Added a one-pixel donor exclusion halo so painted artifact cores are not rebuilt from the same nearby artifact
+- APP_VERSION, version.json, and BUILD_INFO updated to Commit0086
+- Python compileall: PASS
+- Commit0085/Commit0086 focused RAW compensation tests: 14 passed
+- Broader Commit0060-Commit0085 test collection: 139 passed, 1 skipped; 32 legacy source/version-token tests are tied to older commit snapshots and are not release gates for Commit0086
+- Windows/Nuitka runtime: not tested in this Linux container

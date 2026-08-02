@@ -1,0 +1,19 @@
+{
+  "release": "Commit0054",
+  "base": "Commit0033",
+  "python_syntax": "PASS",
+  "yaml_syntax": "PASS",
+  "stable_baseline_regression": "PASS",
+  "checks": {
+    "DICOM display": "PASS",
+    "FFT/Both": "PASS",
+    "RAW display": "PASS",
+    "fixed Explorer": "PASS",
+    "orientation": "PASS",
+    "annotation": "PASS",
+    "no rendering": "PASS",
+    "no engine architecture": "PASS",
+    "diagnostics": "PASS",
+    "Tracking excluded": "PASS"
+  }
+}

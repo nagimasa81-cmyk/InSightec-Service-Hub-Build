@@ -1,0 +1,27 @@
+MR Image Explorer RC1 Commit0104 — Triple Check Report
+Date: 2026-07-25
+
+CHECK 1 — Syntax / implementation: PASS
+- Full Python compileall completed.
+- AST parsing passed for app.py, core/auto_correct.py, launcher.py, and decoder_manager.py.
+- Commit0104 focused tests and Commit0103/0102 integration tests: 9 passed.
+- Selected Commit0089–0104 regression set: 48 passed.
+- Two pre-existing Commit0098 obsolete string-token tests remain failed because the Commit0102 base uses newer Auto-checkbox implementation spelling; Commit0104 does not modify those Expert calculation paths.
+- Quick Adjust Recalculate Once verified to call run_auto_correct once and not auto_correct_with_retry.
+- Auto Correct reliable completion verified to open Review Reconstructed Image automatically.
+
+CHECK 2 — Dependencies / build / EXE readiness: PASS WITH ENVIRONMENT LIMITATION
+- Existing requirements, build BAT files, launcher, and GitHub Actions workflows retained.
+- version.json parses as 5.33.0 / Commit0104.
+- Required build entry files and workflow files verified present.
+- Windows EXE build and launch cannot be executed in this Linux validation environment; source entry points and dependency files were statically checked.
+
+CHECK 3 — ZIP integrity / delivery structure: PASS
+- ZIP contains app.py, core modules, README.md, version.json, BUILD_INFO.txt, Commit0104 change list, Commit0104 check report, requirements, BAT files, and GitHub Actions workflows at project root.
+- Python cache and pytest cache removed before packaging.
+- ZIP CRC integrity verified after creation.
+
+Existing-function preservation
+- Commit0103 six-trial Auto Retry remains unchanged.
+- Candidate detection, validation, virtual compensation, quality selection, Manual Paint, Expert controls, history, preview, apply, and build scripts remain available.
+- Changes are limited to completion navigation, single-run Quick Adjust recalculation, review access, button sizing, documentation, metadata, and focused tests.

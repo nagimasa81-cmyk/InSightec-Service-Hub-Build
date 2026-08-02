@@ -1,0 +1,23 @@
+MR Image Explorer RC1 Commit0095 Check Report
+
+Implemented:
+- Diagonal Artifact Detection Engine for oblique k-space spike trains and coherent stripes.
+- 10 to 170 degree analysis in 5-degree steps, excluding horizontal/vertical neighborhoods.
+- Geometry scoring: angle, span, support, continuity, linearity, mean robust z-score, confidence.
+- Finite-width editable Auto Mask with Hermitian-symmetric counterpart.
+- Frequency-aware Hybrid Compensation diagonal-direction weighting.
+- Added Diagonal selection to ROI artifact mode.
+
+Validation:
+- Python compileall: PASS
+- Commit0095 diagonal detector tests: PASS
+- Commit0094 Block/Line/Mask Reconstruct regression: PASS
+- Commit0093 Spike/Block regression: PASS
+- Commit0092 Manual Mask/DC protection regression: PASS
+- Commit0090 Frequency-aware regression: PASS
+- Commit0089 Poisson regression: PASS
+- Commit0087 Hybrid regression: PASS
+- Combined selected suite: 23 PASS
+
+Limitations:
+- Windows/PySide6 GUI runtime and Nuitka build require validation in the user's Windows GitHub/real-machine environment.

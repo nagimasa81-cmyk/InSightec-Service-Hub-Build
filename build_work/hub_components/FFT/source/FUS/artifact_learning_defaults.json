@@ -1,0 +1,22 @@
+{
+  "artifact_types": [
+    "Spike",
+    "Frequency",
+    "Ghosting",
+    "Motion",
+    "Wraparound",
+    "Shading",
+    "Dropout",
+    "Not Artifact"
+  ],
+  "resolutions": [
+    "No action required",
+    "Reacquired image",
+    "Changed sequence parameters",
+    "Adjusted frequency",
+    "Removed external interference",
+    "Repositioned tracker",
+    "Restarted system",
+    "Hardware service"
+  ]
+}

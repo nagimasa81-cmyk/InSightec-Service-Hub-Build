@@ -1,0 +1,18 @@
+{
+  "commit": "Commit0082",
+  "version": "5.16.32",
+  "status": "PASS",
+  "changes": [
+    "Kept all optional DICOM codecs lazy and GDCM-free at startup",
+    "Added JSON-lines decoder diagnostics under LOCALAPPDATA",
+    "Added configurable bounded decoded-pixel cache (2-256, default 24)",
+    "Fixed DICOM sort-key drift after lazy pixel loading",
+    "Added GitHub lazy-decoder policy audit"
+  ],
+  "validation": [
+    "Python compilation",
+    "Decoder policy regression tests",
+    "pydicom package-data build validation tests",
+    "DICOM runtime stability tests"
+  ]
+}

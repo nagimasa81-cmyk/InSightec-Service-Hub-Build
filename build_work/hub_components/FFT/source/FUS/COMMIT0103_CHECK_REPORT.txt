@@ -1,0 +1,28 @@
+MR Image Explorer RC1 Commit0103 — Triple Check Report
+Date: 2026-07-25
+
+CHECK 1 — Syntax / implementation: PASS
+- Python compileall completed for the full source tree.
+- AST parsing passed for app.py, core/auto_correct.py, launcher.py, and decoder_manager.py.
+- Commit0103 focused tests: 6 passed.
+- Auto Retry preset count and exact values verified.
+- Quality tie-break order verified.
+- version.json parses and reports version 5.32.0 / commit 0103.
+
+CHECK 2 — Dependencies / build / EXE readiness: PASS WITH ENVIRONMENT LIMITATION
+- Existing requirements retained: PySide6>=6.8,<7 and numpy>=2.1,<3.
+- Existing Nuitka/PyInstaller BAT files and GitHub Actions workflows retained unchanged.
+- Imports and core Auto Correct engine tests passed in the available environment.
+- A Windows EXE was not built or launched in this Linux validation environment; the source structure and build entry points were checked for GitHub Actions use.
+- Full historical pytest collection is not a valid release gate because old commit-marker tests intentionally require obsolete APP_VERSION strings and one Qt test requires PySide6 in the local checker.
+- Commit0089–0103 selected regression set: 43 passed, 2 pre-existing Commit0098 string-token tests failed because the Commit0102 base already uses the newer implementation spelling. Commit0103 did not change those Expert paths.
+
+CHECK 3 — ZIP integrity / delivery structure: PASS
+- Source ZIP contains version.json, BUILD_INFO.txt, README.md, Commit0103 change list, check report, build BAT files, requirements, app.py, launcher.py, core modules, and GitHub Actions workflows.
+- Python cache and pytest cache directories removed before packaging.
+- ZIP CRC integrity verified with unzip -t.
+- Source extracts with project files at ZIP root, suitable for the existing GitHub Actions module workflow.
+
+Existing-function preservation
+- Candidate detection, validation, virtual compensation, quality calculation, Manual Paint, Quick Adjust, Expert Settings, history, preview, apply, and build scripts remain in place.
+- Commit0103 adds orchestration around the existing Auto Correct engine rather than refactoring it.

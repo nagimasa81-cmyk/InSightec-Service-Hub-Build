@@ -1,0 +1,8 @@
+Commit0106 - Expert Direct Review
+
+- Added Review Reconstructed Image directly to the Expert tab.
+- Expert review now reconstructs once from the current painted mask and current Expert settings.
+- No Paint-tab transition is required.
+- Existing Auto Correct mask remains available for Expert editing.
+- Empty-mask review is blocked with a clear message.
+- Existing Paint, Auto Correct, Quick Adjust, Apply, and history workflows are unchanged.

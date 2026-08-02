@@ -1,0 +1,9 @@
+Commit0107 Change List
+
+1. Replaced Quick Adjust Recalculate Once candidate-based Auto Correct call with recalculate_with_mask().
+2. Current manual/Auto Correct mask is authoritative and retained unchanged.
+3. Current Quick Adjust parameters are mapped to one compensation pass configuration.
+4. No Candidate Detection, no candidate selection, and no Auto Retry in Recalculate Once.
+5. Review Reconstructed Image opens after successful reconstruction.
+6. Added empty-mask validation.
+7. Updated README, version.json, BUILD_INFO, tests, and check report.

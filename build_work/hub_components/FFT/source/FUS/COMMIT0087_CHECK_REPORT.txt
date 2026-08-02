@@ -1,0 +1,32 @@
+MR Image Explorer RC1 Commit0087 Check Report
+
+Implemented
+1. Hybrid Compensation Engine
+   - Adaptive Direction
+   - Frequency-aware weighting
+   - Harmonic/Poisson background reconstruction
+   - Multi-pass processing
+   - High and Extreme profiles
+2. Manual Paint Engine
+   - Auto / Line / Band / Block / Ring / Eraser
+   - Formal Background Model retained
+   - High 98% and Extreme 100% aggressive compensation
+3. Visualization data
+   - Difference FFT
+   - Difference Phase
+   - Difference Image
+   - Before/After source and result retained synchronously
+4. Auto Artifact Detection
+   - Spike / Line / Band / Block / Ring
+   - Automatic mask generation in Auto mode
+5. MRI optimization
+   - Hermitian symmetry enforcement
+   - ROI statistics
+   - Artifact Reduction Score
+   - History stores metrics and all difference products
+
+Validation
+- Python compileall: PASS
+- Hybrid + RAW compensation regression tests: PASS (13 tests)
+- ZIP integrity: checked after packaging
+- Windows Nuitka executable runtime: not executable in Linux validation environment

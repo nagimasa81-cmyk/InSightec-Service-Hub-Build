@@ -1,0 +1,24 @@
+Commit0104 Change List
+
+1. Auto Correct completion workflow
+- Automatically opens reconstructed-image review after a reliable Auto Correct result.
+- Adds a non-overlay Next Step panel with OK, Quick Adjust, Paint, and Expert buttons.
+
+2. Quick Adjust
+- Recalculate renamed to Recalculate Once.
+- Uses current slider values for exactly one auto_correct calculation.
+- Does not invoke the six-trial Auto Retry engine.
+- Adds Review Reconstructed Image beside Recalculate Once.
+
+3. Paint and Expert roles
+- Paint edits the generated mask location/shape.
+- Expert changes detection and reconstruction parameters for research/diagnostic use.
+
+4. UI text visibility
+- Increased right control-panel minimum width.
+- Increased button minimum height and padding.
+- Changed Quick Adjust buttons to a two-row grid.
+- Added tooltips for long action labels.
+
+5. Metadata
+- Updated version.json, BUILD_INFO.txt, README.md, APP_VERSION, tests, and check report to Commit0104.

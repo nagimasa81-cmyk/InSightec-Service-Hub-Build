@@ -1,0 +1,16 @@
+{
+  "commit": "Commit0081",
+  "version": "5.16.31",
+  "root_cause": "Nuitka included pydicom Python modules but omitted pydicom package data, causing FileNotFoundError for data/urls.json during packaged startup.",
+  "changes": [
+    "Added --include-package-data=pydicom to local Nuitka build",
+    "Added --include-package-data=pydicom to all included GitHub Nuitka workflows",
+    "Added post-build validation requiring *urls.json in Nuitka output",
+    "Preserved Commit0080 lazy decoder architecture and GDCM-free startup"
+  ],
+  "validation": {
+    "python_compile": "pass",
+    "commit0081_regression_tests": "3 passed",
+    "zip_integrity": "pending at report creation"
+  }
+}

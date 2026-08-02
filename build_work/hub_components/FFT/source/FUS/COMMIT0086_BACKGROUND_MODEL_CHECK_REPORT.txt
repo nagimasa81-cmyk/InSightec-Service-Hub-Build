@@ -1,0 +1,14 @@
+MR Image Explorer RC1 Commit0086 - Background Model High Compensation
+
+Implemented
+- Formal Background Model adopted for Manual RAW compensation
+- High performs three reconstruction passes
+- High replaces 95-100% toward the background model
+- High applies smooth boundary blending
+- High integrates robust row/column models to suppress stripe and band artifacts
+- Existing edge-safe, no-wrap behavior retained
+
+Validation
+- Python compile: PASS
+- Existing Commit0086 tests: PASS
+- Background Model High tests: PASS

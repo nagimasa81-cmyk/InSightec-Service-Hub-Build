@@ -1,0 +1,11 @@
+Commit0118 Change List
+
+1. Added Raw Data Compensation control tooltips.
+2. Added persistent Raw Data Compensation Guide button.
+3. Added six-page guide/tour covering Auto Correct, Quick Adjust, Paint, Expert, Review and Apply.
+4. Added startup guide/tour question.
+5. Selecting No stores guide/ask_at_startup=false and suppresses later startup questions.
+6. Added exit confirmation dialog.
+7. Added unchecked next-start guide/tour option in the exit dialog.
+8. Checking the option stores guide/force_show_next_start=true and forces one guide display next launch.
+9. Preserved Commit0117 paint brush behavior and Auto Correct algorithms without changes.

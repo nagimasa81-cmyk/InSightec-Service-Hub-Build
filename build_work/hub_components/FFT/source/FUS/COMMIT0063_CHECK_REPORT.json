@@ -1,0 +1,11 @@
+{
+  "commit": "Commit0063_Active_AutoLevel_Collapsed_Menu_Crosshair_Profiles",
+  "checks": {
+    "python_compile": "passed",
+    "targeted_regression_tests": "12 passed",
+    "fft_initial_auto_level_reset": "implemented",
+    "active_panel_auto_level_routing": "implemented",
+    "right_menu_default_collapsed": "implemented",
+    "crosshair_horizontal_vertical_profiles": "implemented"
+  }
+}

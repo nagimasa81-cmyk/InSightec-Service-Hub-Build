@@ -1,0 +1,30 @@
+Commit0107 Check Report
+
+1. Syntax / AST
+- 107 Python files parsed successfully.
+- compileall completed successfully.
+
+2. Focused regression tests
+- Commit0104 through Commit0107 focused tests: 16 passed.
+- Runtime mask preservation test passed.
+
+3. Dependency / build structure
+- requirements.txt present.
+- requirements-build-nuitka.txt present.
+- requirements-build-fast.txt present.
+- Windows validation, debug, and Nuitka build BAT files preserved.
+- GitHub Actions workflow directory preserved.
+
+4. Full historical test suite
+- Not fully runnable in this Linux environment because PySide6 is not installed.
+- Several old historical tests intentionally assert obsolete APP_VERSION strings and fail collection against newer commits.
+- These failures are unrelated to Commit0107 logic.
+
+5. Functional code-path verification
+- Recalculate Once calls recalculate_with_mask().
+- It does not call run_auto_correct() or auto_correct_with_retry().
+- Explicit mask bypasses candidate detection in compensate().
+- Review opens after successful one-time reconstruction.
+
+6. ZIP integrity
+- To be verified after packaging with CRC test and SHA-256.

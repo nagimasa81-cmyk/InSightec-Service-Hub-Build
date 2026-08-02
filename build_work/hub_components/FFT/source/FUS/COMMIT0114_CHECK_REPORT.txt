@@ -1,0 +1,28 @@
+Commit0114 Triple Check Report
+
+1. Syntax and package integrity
+- Python AST parse: 113 files checked, 0 errors.
+- py_compile: core/auto_correct.py and app.py passed.
+- compileall: passed.
+
+2. Functional focused checks
+- Commit0114 four soft edge Blob detection: passed.
+- DC-centre exclusion: passed.
+- Non-wrapping edge growth: passed.
+- Existing Blob/session behavior: passed.
+- Quick Adjust single-trial behavior: passed.
+- Expert Auto Mask behavior: passed.
+- Focused functional total excluding historical fixed-version assertions: 12 passed.
+
+3. Historical test notes
+- Three old tests assert exact Commit0110/0111/0112 version strings. They fail after the intentional Commit0114 metadata update and are not functional regressions.
+
+4. ZIP verification
+- Performed after packaging: CRC test, file count and SHA-256 recorded below.
+
+Reference-pattern scope
+- The supplied material is a photograph of the application display, not the original numerical k-space array. Commit0114 therefore uses a synthetic regression pattern matching the visible four broad left/right edge blobs. Final sensitivity must still be confirmed using the original raw/k-space data on the target Windows build.
+
+- ZIP CRC: passed
+- ZIP files: 344
+- SHA-256: 18e4efa31f9b7c3c74a74cc4cdea0e4482277e69fb6e797c900b46f23cd91f04
