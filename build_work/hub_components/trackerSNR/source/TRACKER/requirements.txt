@@ -1,0 +1,6 @@
+PySide6>=6.8
+openpyxl>=3.1.5
+Nuitka>=2.6
+zstandard>=0.23
+ordered-set>=4.1
+PyInstaller>=6.10

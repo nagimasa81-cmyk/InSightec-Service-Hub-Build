@@ -1,0 +1,5 @@
+RC7.9
+- Handoff input is filtered by VIMeasure file content, not filename or extension alone.
+- Requires a ; Data: header and at least one timestamp data row.
+- Unrelated mrmserver/log files no longer trigger Data-header error popups.
+- Folder discovery accepts .txt, .log and .dat without requiring VIMeasure in the filename.

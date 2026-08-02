@@ -1,0 +1,14 @@
+{
+  "version": "3.0.0",
+  "name": "Tracker SNR Analyzer FUS Comparison",
+  "changes": [
+    "Eight-page Tracker SNR Quick Guide with workflow-specific content",
+    "Interactive guided tour with spotlight highlighting of actual controls",
+    "Guide / Tour button for reopening help at any time",
+    "Tour navigation with Back, Next, Skip Tour, Finish, and Esc support",
+    "Startup guide preference and one-time next-startup guide behavior retained",
+    "Exit confirmation with optional next-startup guide checkbox retained"
+  ],
+  "release_mode_supported": true,
+  "guide_tour_enabled_in_release": false
+}

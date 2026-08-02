@@ -1,0 +1,52 @@
+{
+  "module_id": "VIMeasure",
+  "module_folder": "VIMeasure",
+  "release_sequence": 79,
+  "source_version": "7.0-rc7.9",
+  "root_marker": "VIMeasureAnalyzer.py",
+  "external_tool_assembly": false,
+  "guide_runtime": false,
+  "contract_schema": "insightec-build-contract/v1",
+  "contract_version": 11,
+  "release_mode": {
+    "environment_variable": "INSIGHTEC_RELEASE_MODE",
+    "value": "1",
+    "guide_tour_enabled": false
+  },
+  "build": {
+    "mode": "bat",
+    "file": "01_BUILD_EXE_NUITKA.bat",
+    "forbidden_tokens": [],
+    "expected_exe_patterns": [
+      "VIMeasureAnalyzer.exe",
+      "*VIMeasure*.exe"
+    ],
+    "output_directories": [
+      "dist",
+      "output",
+      "release"
+    ],
+    "python_import_probe": [
+      "PySide6.QtCore.QTimer"
+    ],
+    "required_python_symbols": {
+      "QTimer": "PySide6.QtCore"
+    },
+    "smoke_test": {
+      "environment": {
+        "VIMEASURE_STARTUP_SMOKE_TEST": "1"
+      },
+      "timeout_seconds": 20,
+      "expected_exit_code": 0
+    }
+  },
+  "ci_safe_build": true,
+  "preflight_profile": "strong-v6-undefined-symbol-and-smoke",
+  "handoff": {
+    "schema": "insightec.auto-analysis.handoff.v1",
+    "argv": "--handoff <json>",
+    "environment": "INSIGHTEC_HANDOFF",
+    "native_receiver": true,
+    "auto_load": true
+  }
+}

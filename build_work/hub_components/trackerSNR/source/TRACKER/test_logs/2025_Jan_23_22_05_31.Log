@@ -1,0 +1,96 @@
+12:00:00.000 SNR: tracker 0 signal: 1050.00 noise: 10.00 SNR: 105.00
+12:01:00.000 TRACKER PEAK LOG tracker 0 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 110.00
+12:00:01.000 SNR: tracker 0 signal: 1051.00 noise: 10.10 SNR: 104.06
+12:01:01.000 TRACKER PEAK LOG tracker 0 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 109.06
+12:00:02.000 SNR: tracker 0 signal: 1052.00 noise: 10.20 SNR: 103.14
+12:01:02.000 TRACKER PEAK LOG tracker 0 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 108.14
+12:00:03.000 SNR: tracker 0 signal: 1053.00 noise: 10.30 SNR: 102.23
+12:01:03.000 TRACKER PEAK LOG tracker 0 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 107.23
+12:00:10.000 SNR: tracker 1 signal: 1060.00 noise: 11.00 SNR: 96.36
+12:01:10.000 TRACKER PEAK LOG tracker 1 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 101.36
+12:00:11.000 SNR: tracker 1 signal: 1061.00 noise: 11.10 SNR: 95.59
+12:01:11.000 TRACKER PEAK LOG tracker 1 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 100.59
+12:00:12.000 SNR: tracker 1 signal: 1062.00 noise: 11.20 SNR: 94.82
+12:01:12.000 TRACKER PEAK LOG tracker 1 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 99.82
+12:00:13.000 SNR: tracker 1 signal: 1063.00 noise: 11.30 SNR: 94.07
+12:01:13.000 TRACKER PEAK LOG tracker 1 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 99.07
+12:00:20.000 SNR: tracker 2 signal: 1070.00 noise: 12.00 SNR: 89.17
+12:01:20.000 TRACKER PEAK LOG tracker 2 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 94.17
+12:00:21.000 SNR: tracker 2 signal: 1071.00 noise: 12.10 SNR: 88.51
+12:01:21.000 TRACKER PEAK LOG tracker 2 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 93.51
+12:00:22.000 SNR: tracker 2 signal: 1072.00 noise: 12.20 SNR: 87.87
+12:01:22.000 TRACKER PEAK LOG tracker 2 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 92.87
+12:00:23.000 SNR: tracker 2 signal: 1073.00 noise: 12.30 SNR: 87.24
+12:01:23.000 TRACKER PEAK LOG tracker 2 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 92.24
+12:00:30.000 SNR: tracker 3 signal: 1080.00 noise: 13.00 SNR: 83.08
+12:01:30.000 TRACKER PEAK LOG tracker 3 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 88.08
+12:00:31.000 SNR: tracker 3 signal: 1081.00 noise: 13.10 SNR: 82.52
+12:01:31.000 TRACKER PEAK LOG tracker 3 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 87.52
+12:00:32.000 SNR: tracker 3 signal: 1082.00 noise: 13.20 SNR: 81.97
+12:01:32.000 TRACKER PEAK LOG tracker 3 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 86.97
+12:00:33.000 SNR: tracker 3 signal: 1083.00 noise: 13.30 SNR: 81.43
+12:01:33.000 TRACKER PEAK LOG tracker 3 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 86.43
+12:00:40.000 SNR: tracker 4 signal: 1090.00 noise: 14.00 SNR: 77.86
+12:01:40.000 TRACKER PEAK LOG tracker 4 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 82.86
+12:00:41.000 SNR: tracker 4 signal: 1091.00 noise: 14.10 SNR: 77.38
+12:01:41.000 TRACKER PEAK LOG tracker 4 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 82.38
+12:00:42.000 SNR: tracker 4 signal: 1092.00 noise: 14.20 SNR: 76.90
+12:01:42.000 TRACKER PEAK LOG tracker 4 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 81.90
+12:00:43.000 SNR: tracker 4 signal: 1093.00 noise: 14.30 SNR: 76.43
+12:01:43.000 TRACKER PEAK LOG tracker 4 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 81.43
+12:00:50.000 SNR: tracker 5 signal: 1100.00 noise: 15.00 SNR: 73.33
+12:01:50.000 TRACKER PEAK LOG tracker 5 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 78.33
+12:00:51.000 SNR: tracker 5 signal: 1101.00 noise: 15.10 SNR: 72.91
+12:01:51.000 TRACKER PEAK LOG tracker 5 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 77.91
+12:00:52.000 SNR: tracker 5 signal: 1102.00 noise: 15.20 SNR: 72.50
+12:01:52.000 TRACKER PEAK LOG tracker 5 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 77.50
+12:00:53.000 SNR: tracker 5 signal: 1103.00 noise: 15.30 SNR: 72.09
+12:01:53.000 TRACKER PEAK LOG tracker 5 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 77.09
+12:00:00.000 SNR: tracker 0 signal: 1150.00 noise: 10.00 SNR: 115.00
+12:01:00.000 TRACKER PEAK LOG tracker 0 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 120.00
+12:00:01.000 SNR: tracker 0 signal: 1151.00 noise: 10.10 SNR: 113.96
+12:01:01.000 TRACKER PEAK LOG tracker 0 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 118.96
+12:00:02.000 SNR: tracker 0 signal: 1152.00 noise: 10.20 SNR: 112.94
+12:01:02.000 TRACKER PEAK LOG tracker 0 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 117.94
+12:00:03.000 SNR: tracker 0 signal: 1153.00 noise: 10.30 SNR: 111.94
+12:01:03.000 TRACKER PEAK LOG tracker 0 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 116.94
+12:00:10.000 SNR: tracker 1 signal: 1160.00 noise: 11.00 SNR: 105.45
+12:01:10.000 TRACKER PEAK LOG tracker 1 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 110.45
+12:00:11.000 SNR: tracker 1 signal: 1161.00 noise: 11.10 SNR: 104.59
+12:01:11.000 TRACKER PEAK LOG tracker 1 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 109.59
+12:00:12.000 SNR: tracker 1 signal: 1162.00 noise: 11.20 SNR: 103.75
+12:01:12.000 TRACKER PEAK LOG tracker 1 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 108.75
+12:00:13.000 SNR: tracker 1 signal: 1163.00 noise: 11.30 SNR: 102.92
+12:01:13.000 TRACKER PEAK LOG tracker 1 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 107.92
+12:00:20.000 SNR: tracker 2 signal: 1170.00 noise: 12.00 SNR: 97.50
+12:01:20.000 TRACKER PEAK LOG tracker 2 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 102.50
+12:00:21.000 SNR: tracker 2 signal: 1171.00 noise: 12.10 SNR: 96.78
+12:01:21.000 TRACKER PEAK LOG tracker 2 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 101.78
+12:00:22.000 SNR: tracker 2 signal: 1172.00 noise: 12.20 SNR: 96.07
+12:01:22.000 TRACKER PEAK LOG tracker 2 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 101.07
+12:00:23.000 SNR: tracker 2 signal: 1173.00 noise: 12.30 SNR: 95.37
+12:01:23.000 TRACKER PEAK LOG tracker 2 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 100.37
+12:00:30.000 SNR: tracker 3 signal: 1180.00 noise: 13.00 SNR: 90.77
+12:01:30.000 TRACKER PEAK LOG tracker 3 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 95.77
+12:00:31.000 SNR: tracker 3 signal: 1181.00 noise: 13.10 SNR: 90.15
+12:01:31.000 TRACKER PEAK LOG tracker 3 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 95.15
+12:00:32.000 SNR: tracker 3 signal: 1182.00 noise: 13.20 SNR: 89.55
+12:01:32.000 TRACKER PEAK LOG tracker 3 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 94.55
+12:00:33.000 SNR: tracker 3 signal: 1183.00 noise: 13.30 SNR: 88.95
+12:01:33.000 TRACKER PEAK LOG tracker 3 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 93.95
+12:00:40.000 SNR: tracker 4 signal: 1190.00 noise: 14.00 SNR: 85.00
+12:01:40.000 TRACKER PEAK LOG tracker 4 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 90.00
+12:00:41.000 SNR: tracker 4 signal: 1191.00 noise: 14.10 SNR: 84.47
+12:01:41.000 TRACKER PEAK LOG tracker 4 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 89.47
+12:00:42.000 SNR: tracker 4 signal: 1192.00 noise: 14.20 SNR: 83.94
+12:01:42.000 TRACKER PEAK LOG tracker 4 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 88.94
+12:00:43.000 SNR: tracker 4 signal: 1193.00 noise: 14.30 SNR: 83.43
+12:01:43.000 TRACKER PEAK LOG tracker 4 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 88.43
+12:00:50.000 SNR: tracker 5 signal: 1200.00 noise: 15.00 SNR: 80.00
+12:01:50.000 TRACKER PEAK LOG tracker 5 peakLocation: 0 peakCOM: 0.1 peakCenter: 0.2 SNR: 85.00
+12:00:51.000 SNR: tracker 5 signal: 1201.00 noise: 15.10 SNR: 79.54
+12:01:51.000 TRACKER PEAK LOG tracker 5 peakLocation: 1 peakCOM: 1.1 peakCenter: 1.2 SNR: 84.54
+12:00:52.000 SNR: tracker 5 signal: 1202.00 noise: 15.20 SNR: 79.08
+12:01:52.000 TRACKER PEAK LOG tracker 5 peakLocation: 2 peakCOM: 2.1 peakCenter: 2.2 SNR: 84.08
+12:00:53.000 SNR: tracker 5 signal: 1203.00 noise: 15.30 SNR: 78.63
+12:01:53.000 TRACKER PEAK LOG tracker 5 peakLocation: 3 peakCOM: 3.1 peakCenter: 3.2 SNR: 83.63

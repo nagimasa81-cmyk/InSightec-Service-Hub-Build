@@ -1,0 +1,39 @@
+{
+  "module_id": "TrackerSNR",
+  "module_folder": "trackerSNR",
+  "release_sequence": 7,
+  "source_version": "release-mode-rc7.2",
+  "root_marker": "TrackerSNR_CLEAN_EXE.py",
+  "external_tool_assembly": false,
+  "guide_runtime": false,
+  "contract_schema": "insightec-build-contract/v1",
+  "contract_version": 9,
+  "release_mode": {
+    "environment_variable": "INSIGHTEC_RELEASE_MODE",
+    "value": "1",
+    "guide_tour_enabled": false
+  },
+  "build": {
+    "mode": "bat",
+    "file": "00_BUILD_EXE_RECOMMENDED_PYINSTALLER.bat",
+    "forbidden_tokens": [],
+    "expected_exe_patterns": [
+      "TrackerSNR_CLEAN_EXE.exe",
+      "*Tracker*SNR*.exe"
+    ],
+    "output_directories": [
+      "dist",
+      "output",
+      "release"
+    ]
+  },
+  "ci_safe_build": true,
+  "preflight_profile": "strong-v2-handoff",
+  "handoff": {
+    "schema": "insightec.auto-analysis.handoff.v1",
+    "argv": "--handoff <json>",
+    "environment": "INSIGHTEC_HANDOFF",
+    "native_receiver": true,
+    "auto_load": true
+  }
+}
