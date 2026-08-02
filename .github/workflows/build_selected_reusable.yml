@@ -28,6 +28,10 @@ jobs:
           restore-keys: all-${{ runner.os }}-${{ inputs.python_version }}-${{ inputs.module_name }}-
       - run: python -m pip install --upgrade pip pyinstaller nuitka ordered-set zstandard
 
+      - name: Validate canonical module routes
+        shell: pwsh
+        run: python scripts/validate_all_routes.py
+
       - id: build
         shell: pwsh
         run: python scripts/build_manager.py --module "${{ inputs.module_name }}"
