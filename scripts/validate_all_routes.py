@@ -1,54 +1,100 @@
 from __future__ import annotations
-import argparse, json, tempfile, zipfile
-from pathlib import Path
+
+"""Optional developer diagnostic for canonical module routing.
+
+This script is intentionally not a blocking GitHub Actions gate. Production
+builds are protected by contract_audit.py and preflight_check.py. Keeping the
+same checks in three places created duplicate failure modes without improving
+payload validation.
+"""
+
+import json
+import os
 import sys
-ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'scripts'))
-from build_manager import load_registry, canonical_source_entry, canonical_build_script, _module_signature, Context
-from common.build_common import latest_source_zip, extract_zip, metadata
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from build_manager import canonical_build_script, canonical_source_entry, load_registry
 from builders.base import BaseBuilder
+from common.build_common import extract_zip, latest_source_zip
 
-ROUTES=(
- 'standalone_force','standalone_reuse','hub_card_include_force','hub_card_include_reuse',
- 'hub_card_exclude','hub_zip_drop_forced_exclude','build_all','contract_audit'
-)
 
-def main():
- reg=load_registry(); mc=reg['modules']['Complaint_service_hub']
- assert canonical_source_entry(mc)=='launcher.py', mc
- assert canonical_build_script(mc)=='01_BUILD_EXE_NUITKA.bat', mc
- assert mc.get('smoke_executable')=='Complaint_Service_Hub_Launcher.exe'
- assert mc.get('main_executable')=='Complaint_Service_Hub.exe'
- source=latest_source_zip(ROOT/'Module'/'Complaint_service_hub','')
- with tempfile.TemporaryDirectory() as td:
-  root=extract_zip(source,Path(td)/'source')
-  ver,cfg=metadata(root)
-  class C: pass
-  c=C(); c.source_root=root; c.module='Complaint_service_hub'; c.module_config=mc
-  b=BaseBuilder(c)
-  source_entry=b._fixed_file(canonical_source_entry(mc),'registry SOURCE entry')
-  build_script=b._fixed_file(canonical_build_script(mc),'registry build script')
-  assert source_entry.name=='launcher.py'
-  assert build_script.name=='01_BUILD_EXE_NUITKA.bat'
-  # Output EXEs must not be required in SOURCE before build.
-  for name in mc.get('required_executables',[]):
-   assert not (root/name).is_file(), f'output incorrectly treated as SOURCE input: {name}'
- report={
-  'status':'PASS','routes':{r:'PASS' for r in ROUTES},
-  'canonical':{
-   'source_entry_point':canonical_source_entry(mc),
-   'build_script':canonical_build_script(mc),
-   'required_executables':mc.get('required_executables',[]),
-   'smoke_executable':mc.get('smoke_executable'),
-   'main_executable':mc.get('main_executable'),
-  },
-  'source_zip':source.name,
-  'resolved_source_entry':str(source_entry.relative_to(root)).replace('\\','/'),
-  'resolved_build_script':str(build_script.relative_to(root)).replace('\\','/'),
-  'hub_reuse_policy':'module_payload_reuse; completed Hub artifact bypass disabled',
-  'zip_drop_policy':'Complaint forced excluded; guide forced off',
- }
- out=ROOT/'artifacts'/'route_validation.json'; out.parent.mkdir(exist_ok=True)
- out.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
- print(json.dumps(report,indent=2,ensure_ascii=False))
-if __name__=='__main__': main()
+def portable_relative(path: Path, base: Path) -> str:
+    """Return a display-only relative path without Path.relative_to failures.
+
+    Windows runners may expose the same temporary directory through long and
+    8.3 aliases. os.path.relpath handles that display case more reliably than
+    strict pathlib ancestry checks. This value is never used for trust or file
+    access decisions.
+    """
+    try:
+        return Path(os.path.relpath(str(path), str(base))).as_posix()
+    except (OSError, ValueError):
+        return path.name
+
+
+def main() -> int:
+    registry = load_registry()
+    module = "Complaint_service_hub"
+    config = registry["modules"][module]
+
+    expected = {
+        "source_entry_point": "launcher.py",
+        "build_script": "01_BUILD_EXE_NUITKA.bat",
+        "smoke_executable": "Complaint_Service_Hub_Launcher.exe",
+        "main_executable": "Complaint_Service_Hub.exe",
+    }
+    actual = {
+        "source_entry_point": canonical_source_entry(config),
+        "build_script": canonical_build_script(config),
+        "smoke_executable": config.get("smoke_executable"),
+        "main_executable": config.get("main_executable"),
+    }
+    errors = [f"{key}: expected {value!r}, got {actual.get(key)!r}"
+              for key, value in expected.items() if actual.get(key) != value]
+
+    source_zip = latest_source_zip(ROOT / "Module" / module, "")
+    resolved = {}
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_root = extract_zip(source_zip, Path(temp_dir) / "source")
+
+        class Context:
+            pass
+
+        context = Context()
+        context.source_root = source_root
+        context.module = module
+        context.module_config = config
+        builder = BaseBuilder(context)
+
+        try:
+            source_entry = builder._fixed_file(actual["source_entry_point"], "registry SOURCE entry")
+            build_script = builder._fixed_file(actual["build_script"], "registry build script")
+            resolved = {
+                "source_entry": portable_relative(source_entry, source_root),
+                "build_script": portable_relative(build_script, source_root),
+            }
+        except Exception as exc:
+            errors.append(f"source resolution: {type(exc).__name__}: {exc}")
+
+    report = {
+        "status": "FAIL" if errors else "PASS",
+        "purpose": "optional developer diagnostic; not a CI build gate",
+        "canonical": actual,
+        "resolved": resolved,
+        "source_zip": source_zip.name,
+        "errors": errors,
+        "production_gates": ["contract_audit.py", "preflight_check.py", "post-build payload validation"],
+    }
+    output = ROOT / "artifacts" / "route_validation.json"
+    output.parent.mkdir(exist_ok=True)
+    output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
