@@ -1,0 +1,39 @@
+{
+  "module_id": "SonicationAnalysis",
+  "module_folder": "Soni",
+  "release_sequence": 15,
+  "source_version": "RC2-R0015",
+  "root_marker": "main.py",
+  "external_tool_assembly": false,
+  "guide_runtime": false,
+  "contract_schema": "insightec-build-contract/v1",
+  "contract_version": 9,
+  "release_mode": {
+    "environment_variable": "INSIGHTEC_RELEASE_MODE",
+    "value": "1",
+    "guide_tour_enabled": false
+  },
+  "build": {
+    "mode": "bat",
+    "file": "01_BUILD_EXE_NUITKA_CI.bat",
+    "forbidden_tokens": [],
+    "expected_exe_patterns": [
+      "Sonication_Replay_Engine.exe",
+      "*Sonication*.exe"
+    ],
+    "output_directories": [
+      "dist",
+      "output",
+      "release"
+    ]
+  },
+  "ci_safe_build": true,
+  "preflight_profile": "strong-v2-handoff",
+  "handoff": {
+    "schema": "insightec.auto-analysis.handoff.v1",
+    "argv": "--handoff <json>",
+    "environment": "INSIGHTEC_HANDOFF",
+    "native_receiver": true,
+    "auto_load": true
+  }
+}

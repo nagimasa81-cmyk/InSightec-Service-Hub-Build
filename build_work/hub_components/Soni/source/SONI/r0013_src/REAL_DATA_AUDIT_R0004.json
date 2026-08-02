@@ -1,0 +1,152 @@
+{
+  "source": "/mnt/data/17-00-24_ANx(1).zip",
+  "workspace": "/tmp/SonicationReplay_mp252vmb",
+  "sonication_count": 8,
+  "cpc_spectrum_file_count": 30,
+  "sonications": [
+    {
+      "name": "Sonication1",
+      "replay_frames": 11,
+      "magnitude_frames": 11,
+      "temperature_frames": 10,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    },
+    {
+      "name": "Sonication2",
+      "replay_frames": 11,
+      "magnitude_frames": 11,
+      "temperature_frames": 10,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    },
+    {
+      "name": "Sonication3",
+      "replay_frames": 11,
+      "magnitude_frames": 11,
+      "temperature_frames": 10,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    },
+    {
+      "name": "Sonication4",
+      "replay_frames": 5,
+      "magnitude_frames": 5,
+      "temperature_frames": 4,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    },
+    {
+      "name": "Sonication5",
+      "replay_frames": 8,
+      "magnitude_frames": 8,
+      "temperature_frames": 7,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    },
+    {
+      "name": "Sonication6",
+      "replay_frames": 10,
+      "magnitude_frames": 10,
+      "temperature_frames": 9,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    },
+    {
+      "name": "Sonication7",
+      "replay_frames": 13,
+      "magnitude_frames": 13,
+      "temperature_frames": 12,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    },
+    {
+      "name": "Sonication8",
+      "replay_frames": 15,
+      "magnitude_frames": 15,
+      "temperature_frames": 14,
+      "spectrum_files": 1,
+      "act_files": 1,
+      "main_frequency_hz": 800000.0,
+      "first_magnitude_shape": [
+        256,
+        256
+      ],
+      "first_temperature_shape": [
+        256,
+        256
+      ],
+      "temperature_source": "Absolute RAW"
+    }
+  ]
+}

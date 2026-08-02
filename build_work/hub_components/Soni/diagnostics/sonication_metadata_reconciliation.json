@@ -1,0 +1,9 @@
+{
+  "authoritative_file": "r0013_src/version.json",
+  "expected_version": "RC2-R0015",
+  "expected_commit": "R0015",
+  "version_before": "RC2-R0015",
+  "app_version_before": "RC2-R0015",
+  "app_commit_before": "R0015",
+  "repaired": false
+}
