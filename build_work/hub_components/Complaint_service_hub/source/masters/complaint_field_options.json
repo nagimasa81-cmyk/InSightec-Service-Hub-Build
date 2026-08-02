@@ -1,0 +1,88 @@
+{
+  "usage_type": [
+    "--None--",
+    "Clinical Research",
+    "Commercial",
+    "Pre-Clinical",
+    "Off Label",
+    "Site Initiated Clinical Research"
+  ],
+  "treatment_indication": [
+    "--None--",
+    "Essential Tremor",
+    "Bilateral Essential Tremor",
+    "Tremor Dominant Idiopathic Parkinson's Disease-Unilateral",
+    "Parkinson's Disease",
+    "Neuropathic Pain",
+    "Prostate Cancer",
+    "Ablation of Prostate Tissue",
+    "Uterine Fibroids"
+  ],
+  "treatment_application": [
+    "--None--",
+    "UF",
+    "Bone",
+    "CBS",
+    "Prostate",
+    "Neuro 650",
+    "Neuro 220",
+    "Breast"
+  ],
+  "affected_treatment": [
+    "--None--",
+    "Yes",
+    "No",
+    "Unknown"
+  ],
+  "adverse_occurred": [
+    "--None--",
+    "Yes",
+    "No"
+  ],
+  "adverse_type": [
+    "--None--",
+    "Serious",
+    "Non-serious",
+    "Unknown"
+  ],
+  "received_mode": [
+    "--None--",
+    "Telephone",
+    "Mail",
+    "Email",
+    "Fax"
+  ],
+  "complaint_source": [
+    "--None--",
+    "Medical Staff",
+    "Pharmacist",
+    "Patient",
+    "Study Subject",
+    "Other",
+    "Customer",
+    "Distributor/Importer"
+  ],
+  "software_version": [
+    "4.25",
+    "4.26",
+    "6.24",
+    "6.26",
+    "6.32",
+    "6.5",
+    "6.52",
+    "6.58",
+    "7.0",
+    "7.32",
+    "7.33",
+    "7.41",
+    "7.42",
+    "7.43",
+    "7.44",
+    "7.45",
+    "8.0",
+    "8.1",
+    "9.0",
+    "9.01",
+    "No Relevant"
+  ]
+}

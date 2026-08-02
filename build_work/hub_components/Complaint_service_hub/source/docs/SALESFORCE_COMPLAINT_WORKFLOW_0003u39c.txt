@@ -1,0 +1,17 @@
+Build 0003u39c
+
+Implemented Salesforce Complaint Workflow:
+- Read the selected Classic Outlook email.
+- Import .eml or text, or paste email content.
+- Extract mapped complaint fields and allow review/editing.
+- Open the configured Salesforce complaint URL.
+- Arm a field so the next click in Edge/Chrome receives the copied value.
+- Never presses Salesforce Save or submits the complaint automatically.
+- Capture the Salesforce Complaint Number after registration.
+- Prepare a standardized reply through Outlook or Template mode.
+- Save workflow history under data/salesforce_workflows.
+
+Security and control:
+- Login credentials are never read or stored.
+- The user reviews every extracted value.
+- The user remains responsible for reviewing and saving Salesforce records and sending email.

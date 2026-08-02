@@ -1,0 +1,20 @@
+Commit 0003u38b - Guide Localization and Button Fix
+
+Implemented:
+- Localized guide title, body, progress, navigation, completion prompt, error messages, startup prompt and exit confirmation.
+- Supported languages: English, Japanese, Korean, Thai, Traditional Chinese, Simplified Chinese and Hindi.
+- Fixed Finish button failure caused by missing QMessageBox import.
+- Added guarded handlers and visible error reporting for Previous, Next, Finish, Skip and Go to this section.
+- Reloads localized guide steps after language changes.
+- Defers Complaint opening until the guide dialog has closed.
+
+Regression checks:
+1. Open Guide in every supported language and verify all eight pages.
+2. Previous is disabled on page 1 and works on pages 2-8.
+3. Next advances one page only.
+4. Skip closes the guide and clears the highlight.
+5. Go to this section focuses Language or opens Complaint where a target exists.
+6. Finish saves completion status and displays the localized Create Complaint confirmation.
+7. Yes closes Guide and opens Complaint; No closes Guide without opening Complaint.
+8. Do not show this guide again persists its setting.
+9. Exit confirmation remains translated after switching language.

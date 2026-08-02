@@ -1,0 +1,7 @@
+DO Analysis Qt 2026.07.28.6
+
+- Display actual Treatment Pause and Degas Pause states as chart labels.
+- Pause labels are no longer hidden when the surrounding circulate sections are merged into one analyzed event.
+- Pause periods remain excluded from Treatment/Degas active-time evaluation; this change adds chart visibility only.
+- Labels are controlled by the existing Non-event labels checkbox.
+- Updated version.json and in-app guide text.

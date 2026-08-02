@@ -1,0 +1,75 @@
+{
+  "version": "1.2",
+  "translations": {
+    "en": [
+      {"id":"welcome","title":"Welcome","body":"Welcome to Complaint Service Hub. This guide introduces the core complaint workflow."},
+      {"id":"language","title":"Language Selection","body":"Choose your preferred display language from the selector in the upper-right area.","target":"lang_cb"},
+      {"id":"create","title":"Create Complaint","body":"Select Complaint from the navigation panel or launch pad to create a complaint.","target":"nav_complaint"},
+      {"id":"basic","title":"Basic Information","body":"Complete the Basic tab. Required fields must not remain red."},
+      {"id":"medical","title":"Medical Information","body":"Complete and verify all required fields in the Medical tab."},
+      {"id":"additional","title":"Additional Information","body":"Complete and verify all required fields in the Additional tab."},
+      {"id":"feedback","title":"Create Feedback","body":"Create Feedback prepares the English email. Outlook opens automatically when available; otherwise copy the template to your company email."},
+      {"id":"finish","title":"Finish","body":"The quick guide is complete. Open Guide from the navigation panel whenever you need to review it."}
+    ],
+    "ja": [
+      {"id":"welcome","title":"ようこそ","body":"Complaint Service Hubの基本的なComplaint作成手順を案内します。"},
+      {"id":"language","title":"表示言語の選択","body":"画面右上の言語選択から、使用する表示言語を選択します。","target":"lang_cb"},
+      {"id":"create","title":"Complaintの作成","body":"ナビゲーションまたは起動パッドからComplaintを選択して、新しいComplaintを開始します。","target":"nav_complaint"},
+      {"id":"basic","title":"基本情報","body":"基本情報タブの必須項目を入力します。赤く表示された必須項目が残らないようにしてください。"},
+      {"id":"medical","title":"医療情報","body":"医療情報タブの必須項目を入力し、内容を確認します。"},
+      {"id":"additional","title":"追加情報","body":"追加情報タブの必須項目を入力し、赤い未入力項目がないことを確認します。"},
+      {"id":"feedback","title":"フィードバック作成","body":"フィードバック作成では英語メールを準備します。Outlookが利用できる場合は自動で開き、利用できない場合はテンプレートを会社メールへコピーします。"},
+      {"id":"finish","title":"ガイド完了","body":"クイックガイドは完了です。必要な場合はナビゲーションのガイドからいつでも再表示できます。"}
+    ],
+    "ko": [
+      {"id":"welcome","title":"환영합니다","body":"Complaint Service Hub의 기본 Complaint 작성 절차를 안내합니다."},
+      {"id":"language","title":"언어 선택","body":"오른쪽 위의 언어 선택기에서 표시 언어를 선택하십시오.","target":"lang_cb"},
+      {"id":"create","title":"Complaint 작성","body":"탐색 메뉴 또는 시작 패드에서 Complaint를 선택하여 새 Complaint를 시작하십시오.","target":"nav_complaint"},
+      {"id":"basic","title":"기본 정보","body":"기본 정보 탭의 필수 항목을 입력하고 빨간 항목이 남지 않도록 하십시오."},
+      {"id":"medical","title":"의료 정보","body":"의료 정보 탭의 필수 항목을 입력하고 확인하십시오."},
+      {"id":"additional","title":"추가 정보","body":"추가 정보 탭을 완료하고 빨간 필수 항목이 없는지 확인하십시오."},
+      {"id":"feedback","title":"피드백 작성","body":"피드백 작성은 영어 이메일을 준비합니다. Outlook을 사용할 수 있으면 자동으로 열고, 그렇지 않으면 템플릿을 회사 이메일에 복사하십시오."},
+      {"id":"finish","title":"완료","body":"빠른 가이드가 완료되었습니다. 필요할 때 탐색 메뉴의 가이드에서 다시 열 수 있습니다."}
+    ],
+    "th": [
+      {"id":"welcome","title":"ยินดีต้อนรับ","body":"คู่มือนี้อธิบายขั้นตอนพื้นฐานในการสร้าง Complaint ใน Complaint Service Hub"},
+      {"id":"language","title":"เลือกภาษา","body":"เลือกภาษาที่ต้องการจากตัวเลือกภาษาบริเวณมุมขวาบน","target":"lang_cb"},
+      {"id":"create","title":"สร้าง Complaint","body":"เลือก Complaint จากแถบนำทางหรือหน้าเริ่มต้นเพื่อสร้าง Complaint ใหม่","target":"nav_complaint"},
+      {"id":"basic","title":"ข้อมูลพื้นฐาน","body":"กรอกข้อมูลที่จำเป็นในแท็บข้อมูลพื้นฐานและอย่าให้มีช่องสีแดงค้างอยู่"},
+      {"id":"medical","title":"ข้อมูลทางการแพทย์","body":"กรอกและตรวจสอบช่องที่จำเป็นในแท็บข้อมูลทางการแพทย์"},
+      {"id":"additional","title":"ข้อมูลเพิ่มเติม","body":"กรอกแท็บข้อมูลเพิ่มเติมและตรวจสอบว่าไม่มีช่องที่จำเป็นเป็นสีแดง"},
+      {"id":"feedback","title":"สร้าง Feedback","body":"ระบบจะเตรียมอีเมลภาษาอังกฤษ หากใช้ Outlook ได้ ระบบจะเปิดโดยอัตโนมัติ มิฉะนั้นให้คัดลอกเทมเพลตไปยังอีเมลบริษัท"},
+      {"id":"finish","title":"เสร็จสิ้น","body":"คู่มือฉบับย่อเสร็จสมบูรณ์ คุณสามารถเปิดอีกครั้งจากเมนูคู่มือได้ทุกเมื่อ"}
+    ],
+    "zh-TW": [
+      {"id":"welcome","title":"歡迎","body":"本指南介紹 Complaint Service Hub 的基本 Complaint 建立流程。"},
+      {"id":"language","title":"選擇語言","body":"請從右上方的語言選擇器選擇顯示語言。","target":"lang_cb"},
+      {"id":"create","title":"建立 Complaint","body":"從導覽列或啟動面板選擇 Complaint，以開始新的 Complaint。","target":"nav_complaint"},
+      {"id":"basic","title":"基本資訊","body":"完成基本資訊分頁的必填欄位，請勿留下紅色欄位。"},
+      {"id":"medical","title":"醫療資訊","body":"完成並確認醫療資訊分頁中的所有必填欄位。"},
+      {"id":"additional","title":"附加資訊","body":"完成附加資訊分頁，並確認沒有紅色必填欄位。"},
+      {"id":"feedback","title":"建立 Feedback","body":"系統會準備英文郵件。Outlook可用時會自動開啟，否則請將範本複製到公司郵件。"},
+      {"id":"finish","title":"完成","body":"快速指南已完成。需要時可從導覽列的指南再次開啟。"}
+    ],
+    "zh-CN": [
+      {"id":"welcome","title":"欢迎","body":"本指南介绍 Complaint Service Hub 的基本 Complaint 创建流程。"},
+      {"id":"language","title":"选择语言","body":"请从右上角的语言选择器选择显示语言。","target":"lang_cb"},
+      {"id":"create","title":"创建 Complaint","body":"从导航栏或启动面板选择 Complaint，以开始新的 Complaint。","target":"nav_complaint"},
+      {"id":"basic","title":"基本信息","body":"完成基本信息选项卡的必填字段，不要留下红色字段。"},
+      {"id":"medical","title":"医疗信息","body":"完成并确认医疗信息选项卡中的所有必填字段。"},
+      {"id":"additional","title":"附加信息","body":"完成附加信息选项卡，并确认没有红色必填字段。"},
+      {"id":"feedback","title":"创建 Feedback","body":"系统会准备英文邮件。Outlook可用时会自动打开，否则请将模板复制到公司邮件。"},
+      {"id":"finish","title":"完成","body":"快速指南已完成。需要时可从导航栏中的指南再次打开。"}
+    ],
+    "hi": [
+      {"id":"welcome","title":"स्वागत है","body":"यह गाइड Complaint Service Hub में Complaint बनाने की मूल प्रक्रिया बताती है।"},
+      {"id":"language","title":"भाषा चयन","body":"ऊपरी दाएँ भाग में भाषा चयन से अपनी प्रदर्शन भाषा चुनें।","target":"lang_cb"},
+      {"id":"create","title":"Complaint बनाएँ","body":"नया Complaint शुरू करने के लिए नेविगेशन या लॉन्च पैड से Complaint चुनें।","target":"nav_complaint"},
+      {"id":"basic","title":"मूल जानकारी","body":"मूल जानकारी टैब के सभी आवश्यक फ़ील्ड भरें और कोई लाल फ़ील्ड न छोड़ें।"},
+      {"id":"medical","title":"चिकित्सा जानकारी","body":"चिकित्सा जानकारी टैब के सभी आवश्यक फ़ील्ड भरें और जाँचें।"},
+      {"id":"additional","title":"अतिरिक्त जानकारी","body":"अतिरिक्त जानकारी टैब पूरा करें और सुनिश्चित करें कि कोई आवश्यक फ़ील्ड लाल न हो।"},
+      {"id":"feedback","title":"Feedback बनाएँ","body":"सिस्टम अंग्रेज़ी ईमेल तैयार करता है। Outlook उपलब्ध होने पर अपने आप खुलेगा, अन्यथा टेम्पलेट को कंपनी ईमेल में कॉपी करें।"},
+      {"id":"finish","title":"पूर्ण","body":"त्वरित गाइड पूरा हो गया है। आवश्यकता होने पर नेविगेशन के गाइड से इसे फिर खोलें।"}
+    ]
+  }
+}

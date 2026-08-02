@@ -1,0 +1,16 @@
+Complaint Service Hub 0003u37 - Common Guide Framework Phase 1
+
+Implemented:
+- Reusable common_guide package
+- First-start welcome prompt
+- Guide Viewer with Previous / Next / Skip / Finish
+- Phase-1 guided-tour overlay and widget targeting
+- Persistent Don't ask again setting
+- Exit confirmation with Show guide next startup checkbox
+- Eight Complaint-specific guide steps
+- English and Japanese guide UI foundation
+- Guide navigation entry
+- Build package copies common_guide resources
+
+Settings: config/guide_settings.json
+Guide definition: common_guide/guides/complaint_steps.json

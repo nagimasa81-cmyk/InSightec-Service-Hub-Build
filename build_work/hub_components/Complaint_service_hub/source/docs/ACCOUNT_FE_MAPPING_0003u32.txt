@@ -1,0 +1,16 @@
+Complaint Service Hub 0003u32
+
+Changes
+- Account field starts blank and is no longer filled from Distributor.
+- Distributor FE is no longer displayed in the intake form; linked FE remains internal for export/recipient logic.
+- Country/Distributor/Distributor FE mapping normalized.
+
+Mapping
+Australia: Device Technologies / Bruno
+China: Fosun InSightec / Tony, Siyu, Harry
+India: Vattikuti / Vijay
+Korea: GEMS / Eom, Hong, Lee, Yoon
+Philippines: Device Technologies / Golf
+Thailand: Device Technologies / Golf
+Japan: NA / none
+Taiwan: NA / none

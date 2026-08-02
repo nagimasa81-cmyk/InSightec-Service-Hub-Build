@@ -1,0 +1,1 @@
+{"subject":"[Complaint] {complaint_subject}","body":"Dear InSightec Team,\n\nPlease find the complaint information below.\n\nCountry: {country}\nHospital: {hospital_name}\nSerial: {serial}\nSubject: {complaint_subject}\nDescription:\n{complaint_description}\n\nBest regards,"}

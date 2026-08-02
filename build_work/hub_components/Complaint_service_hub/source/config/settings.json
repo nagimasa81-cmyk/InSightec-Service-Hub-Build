@@ -1,0 +1,10 @@
+{
+  "company": "InSightec",
+  "user": "Masaki Inoue",
+  "language": "en",
+  "output_mode": "Outlook",
+  "auto_login": false,
+  "theme": "InSightec Light",
+  "feedback_to": "masakii@insightec.com",
+  "feedback_mode": "Outlook"
+}

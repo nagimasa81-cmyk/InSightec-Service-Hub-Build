@@ -1,0 +1,15 @@
+Complaint Service Hub 0003u27
+
+Fixes
+- Added the missing PySide6.QtWidgets.QToolButton import used by the shared English calendar configuration.
+- Prevents Complaint launch failure: NameError: QToolButton is not defined.
+
+Triple checks
+1. Python source compilation for all .py files.
+2. AST-based Qt symbol usage/import consistency check across the source tree.
+3. Version metadata consistency and final ZIP integrity/content validation.
+
+Scope
+- Shared calendar configuration
+- Complaint launch path
+- Home, Salesforce, Settings, Feedback, Update ZIP and Master Manager source-level regression

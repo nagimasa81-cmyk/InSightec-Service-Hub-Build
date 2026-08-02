@@ -1,0 +1,20 @@
+Complaint Service Hub 0003u37 - Validation Engine Phase 2
+
+Implemented:
+- reusable common_validation package
+- real-time required field validation
+- red/green field highlighting
+- Basic, Medical and Additional tab completion indicators
+- completion percentage and translated readiness state
+- final validation before Save, Export and Outlook output
+- missing-field list with double-click or Jump to Field navigation
+- scroll and focus highlight on the selected missing field
+- translation expansion for all currently supported languages
+- build packaging updated to include common_validation
+
+Static checks:
+- Python source compilation passed
+- translation JSON consistency passed
+- ZIP integrity check passed
+
+Runtime GUI validation must be performed on Windows with PySide6/Nuitka.

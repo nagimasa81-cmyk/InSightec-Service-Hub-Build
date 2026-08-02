@@ -1,0 +1,13 @@
+DO Analysis Qt 2026.07.28.5
+
+- Integrated InSightec Common Guide / Tour package.
+- Added startup Quick Guide question.
+- Added "No - Do Not Ask Again" persistent preference.
+- Added Help menu for opening the guide at any time.
+- Added Help action to restore the startup guide question.
+- Added exit confirmation dialog.
+- Added "Show the guide and guided tour at the next startup" option.
+- Added DO Analysis-specific guide pages for ZIP import, automatic analysis,
+  collapsible settings, result tabs, chart controls, value popup, zoom,
+  export, and project functions.
+- Preserved automatic analysis and removed Analyze-button workflow.

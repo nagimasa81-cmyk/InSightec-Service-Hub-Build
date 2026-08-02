@@ -1,0 +1,7 @@
+Complaint Service Hub 0003u25
+
+- Applied an English locale to every QDateEdit popup calendar.
+- Increased popup width and navigation-header sizing so Month and four-digit Year remain visible.
+- Added a Today button to every popup calendar.
+- Kept ISO yyyy-MM-dd input display and the existing --None-- special value.
+- Applied through the shared date-widget factory, including Event Date and other date inputs.

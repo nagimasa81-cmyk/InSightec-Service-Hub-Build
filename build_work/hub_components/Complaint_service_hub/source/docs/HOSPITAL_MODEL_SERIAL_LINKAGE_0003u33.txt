@@ -1,0 +1,10 @@
+Complaint Service Hub 0003u33
+
+Hospital -> Model -> Serial linkage correction
+
+- Model is now an editable selection field populated directly from the selected Country and Hospital.
+- Changing Hospital clears stale Model and Serial values and selects the first valid Model when available.
+- Changing Model filters Serial candidates to the matching Hospital and Model.
+- Serial selection still refreshes Product, MR Info, owner and internal Distributor FE data.
+- Corrected country / distributor / Distributor FE mappings from 0003u32 are preserved.
+- Version metadata and build artifact names updated to 0003u33.

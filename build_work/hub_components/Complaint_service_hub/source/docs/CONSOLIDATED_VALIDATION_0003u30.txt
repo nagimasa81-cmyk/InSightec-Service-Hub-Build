@@ -1,0 +1,11 @@
+Complaint Service Hub 0003u30
+
+- Consolidated release based on 0003u29.
+- Retains password-protected Admin Mode activation and Admin master update.zip export.
+- Retains editable selectable lists with manual-entry support and configured default values/attachments.
+- Retains English popup calendars with visible month/year navigation and a Today button.
+- Retains secure Site visibility: InSightec users can view all Sites; other users can view only Sites assigned to their effective user Area/Site scope.
+- Retains the Tetsuya Hara default master name correction.
+- Confirms no inferred GEMS Taiwan or ProChime-to-China mapping is introduced.
+- Synchronizes version.json, app_version.json and manifest.json to 0.5.0-alpha.0003u30.
+- Python sources, JSON masters, build entry points and update-package scripts were checked for release consistency.

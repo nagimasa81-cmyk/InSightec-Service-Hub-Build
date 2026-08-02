@@ -1,0 +1,1 @@
+Commit0003u16 guided entry prototype. Six tabs, progress, required highlighting, English check, preview/export. No Log Explorer helper and no Feedback hand-off.

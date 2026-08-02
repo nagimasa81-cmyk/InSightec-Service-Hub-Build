@@ -1,0 +1,9 @@
+0003u26 Photo Reference Update
+
+- Software Version selectable/manual-entry master updated from supplied reference photos:
+  4.25, 4.26, 6.24, 6.26, 6.32, 6.5, 6.52, 6.58, 7.0, 7.32, 7.33, 7.41, 7.42, 7.43, 7.44, 7.45, 8.0, 8.1, 9.0, 9.01, No Relevant.
+- Software Version remains directly editable by users.
+- Admin Complaint Input List Manager can add/change/remove Software Version candidates.
+- Site-specific versions are merged with the shared master instead of replacing it.
+- Calendar navigation explicitly reserves separate width for English month and four-digit year controls.
+- Today button retained on every shared date popup.

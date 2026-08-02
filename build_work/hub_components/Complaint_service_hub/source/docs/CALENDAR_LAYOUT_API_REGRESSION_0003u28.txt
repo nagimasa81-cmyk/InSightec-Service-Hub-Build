@@ -1,0 +1,12 @@
+Complaint Service Hub 0003u28
+
+Fixes
+- Fixed Complaint launch failure caused by calling QGridLayout-only rowCount()/columnCount() APIs on QCalendarWidget's QVBoxLayout.
+- Calendar Today button insertion now branches by actual layout type.
+- Added a defensive fallback for unexpected Qt platform layout implementations.
+- Synchronized manifest.json, app_version.json, and version.json to 0003u28.
+
+Regression checks
+1. Python syntax compilation for all .py files.
+2. AST/static scan for rowCount/columnCount usage and Qt layout API mismatches.
+3. Version consistency, required source files, and ZIP CRC validation.

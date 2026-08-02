@@ -1,0 +1,6 @@
+BUILD_MODE=standalone
+BUILD_ENGINE=Nuitka
+BUILD_SCRIPT=BUILD_EXE.bat
+ALLOW_PYTHON_FALLBACK=false
+ARTIFACT_PATH=dist/Complaint_Service_Hub
+ENTRYPOINT=Complaint_Service_Hub_Launcher.exe

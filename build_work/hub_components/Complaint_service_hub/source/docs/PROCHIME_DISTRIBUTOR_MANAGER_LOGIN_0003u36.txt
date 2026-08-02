@@ -1,0 +1,8 @@
+Complaint Service Hub 0003u36
+
+- Added ProChime to the startup Company list.
+- Added Alvis and Jack to People master under ProChime.
+- Preserved their role/class as Distributor Manager and permission as User.
+- Enabled both accounts for normal login and Complaint creation via login_enabled.
+- Limited both accounts to Taiwan sites through assigned_countries.
+- Updated version metadata, build BAT, GitHub artifact naming, README, and update ZIP source build to 0003u36.

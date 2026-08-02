@@ -1,0 +1,26 @@
+Commit 0003u1 Build System Notes
+
+Purpose:
+- Stabilize GitHub Actions and local Windows builds.
+- Keep Launcher + Hub + Updater separated.
+- Avoid Tkinter/PyInstaller.
+- Support both Python 3.13 and Python 3.14 build paths.
+
+Key changes:
+- Build uses python command, not py launcher.
+- Build script accepts only Python 3.13 or 3.14.
+- Nuitka and PySide6 are installed in versions compatible with Python 3.14:
+  - Nuitka >= 4.1.3, < 4.2
+  - PySide6 >= 6.11.1, < 6.12
+- The same dependency set is used for Python 3.13.
+- Nuitka option --assume-yes-for-downloads is enabled so Dependency Walker can be downloaded automatically in non-interactive CI.
+- GitHub Actions can be manually run with Python 3.13 or 3.14, and push builds test both.
+
+Build:
+1. Run 01_BUILD_EXE_NUITKA.bat
+2. Output: dist\Complaint_Service_Hub\Complaint_Service_Hub_Launcher.exe
+
+If build fails:
+- Confirm internet access for Dependency Walker download.
+- Confirm Python is 3.13 or 3.14.
+- Confirm GitHub Actions uses the updated workflow file.

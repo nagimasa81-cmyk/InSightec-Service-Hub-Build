@@ -1,0 +1,18 @@
+Commit 0003u15 Source Root Compatibility
+
+This SOURCE ZIP stores build files at the ZIP root.
+The matching R5 workflow also auto-detects a wrapper folder when older SOURCE ZIPs contain one.
+
+Required root markers:
+- build_config.json
+- version.json
+- BUILD_EXE.bat
+- main.py
+- hub_app.py
+
+Expected workflow log:
+- Detected root: ...
+- build_config.json = True
+- BUILD_EXE.bat = True
+- Build using configured script = executed
+- Build Python entry with PyInstaller = skipped

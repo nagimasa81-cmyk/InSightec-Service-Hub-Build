@@ -1,0 +1,11 @@
+Complaint Service Hub Commit0003u21
+
+Graphical Master Manager
+- Dashboard cards for people, systems, countries and mail routes
+- Searchable sortable tables
+- Add, edit and delete master records
+- JSON import and export
+- Mailing route editor
+- Salesforce field mapping editor
+- One-click master backup ZIP
+- Existing master JSON and update package compatibility retained

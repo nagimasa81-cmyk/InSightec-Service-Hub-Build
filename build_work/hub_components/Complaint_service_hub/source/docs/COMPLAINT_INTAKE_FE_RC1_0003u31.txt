@@ -1,0 +1,25 @@
+Complaint Service Hub Commit 0003u32
+Release date: 2026-07-24
+
+Implemented:
+- Audited Complaint startup widget references, including mr_info and distributor_fe.
+- Stabilized Company -> Country -> Hospital -> Serial -> Distributor FE linkage.
+- Serial lookup now prefers exact Country + Hospital + Serial matching.
+- Golf: Device Technology, Thailand and Philippines scope.
+- Tony: Distributor FE, China scope.
+- Normalized Philippine/Phillipine country data to Philippines.
+- Improved Master Manager sizing, filtering feedback, column sizing and validation status.
+- Retained English calendar, Today button and widened visible year control.
+- Added High-DPI scaling policy and scroll-backed Complaint pages for laptop screens.
+- Investigation and Closure tabs are greyed out and unavailable during new Complaint intake.
+- Updated version metadata to 0003u32.
+
+RC1 regression coverage:
+- Python compile and JSON validation
+- Complaint dialog offscreen construction
+- Undefined self-widget static audit
+- Company/site scope checks for Golf and Tony
+- Exact FE linkage checks for Thailand, Philippines and China
+- Calendar creation and Today control presence
+- Investigation/Closure disabled-state checks
+- Master Manager offscreen construction

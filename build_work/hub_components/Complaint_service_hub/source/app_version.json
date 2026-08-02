@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "module_name": "Complaint_Service_Hub",
+  "display_name": "InSightec Complaint Service Hub",
+  "version": "0.5.0-alpha.0003u39c",
+  "build": "0003u39c",
+  "commit": "0003u39c",
+  "release_name": "Salesforce Complaint Workflow and Registration Reply",
+  "release_date": "2026-07-30",
+  "build_engine": "Nuitka",
+  "build_mode": "standalone",
+  "python_versions": [
+    "3.13",
+    "3.14"
+  ],
+  "feedback_engine_version": "1.0",
+  "minimum_supported_version": "0.5.0-alpha",
+  "guide_version": "1.2",
+  "validation_engine_version": "1.0",
+  "description": "Adds a guided Salesforce complaint workflow: received-email import, field extraction and review, Edge/Chrome next-click clipboard paste, complaint-number capture, standardized registration reply in Outlook or Template mode, and local workflow history.",
+  "build_timestamp_utc": "2026-07-30T10:10:00+00:00",
+  "source_revision": "local"
+}

@@ -1,0 +1,8 @@
+Build 0003u39a
+
+- Uses project-local .build_temp for TEMP and TMP.
+- Uses project-local .nuitka_cache.
+- Removes interactive pause commands from the CI build path.
+- Adds --remove-output to Nuitka standalone builds.
+- Corrects tools_update_version.py so it no longer resets u39 metadata to u38.
+- Keeps the u39 Outlook/Template preview behavior unchanged.

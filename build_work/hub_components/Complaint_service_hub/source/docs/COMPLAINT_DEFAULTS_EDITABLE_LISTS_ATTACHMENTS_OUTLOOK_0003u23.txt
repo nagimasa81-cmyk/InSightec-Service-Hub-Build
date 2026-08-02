@@ -1,0 +1,10 @@
+Commit 0003u23
+
+- Medical defaults match the supplied screen: Commercial / Essential Tremor / Neuro 650 / Affected Treatment No / Adverse Event No.
+- Complaint list fields support manual typing.
+- Admin Mode includes an input-list JSON editor and persists masters/complaint_field_options.json.
+- Complaint photos/files support file selection and drag-and-drop.
+- Outlook To is populated by Country and remains manually editable.
+- Outlook draft uses all entered complaint fields in the body.
+- Selected photos/files are attached to the Outlook draft.
+- Empty recipient is blocked with an explicit warning instead of silently creating a blank-To draft.

@@ -1,0 +1,7 @@
+Build 0003u39b
+
+- Added all required People fields to the Add Record editor.
+- Added Short Name and Class columns to the People master table.
+- Corrected Shinho Kim to Sinho Kim.
+- Added Brett Tapson as an active InSightec User in Australia.
+- Added BrettT@insightec.com immediately after Sinho in every mail route containing Sinho.

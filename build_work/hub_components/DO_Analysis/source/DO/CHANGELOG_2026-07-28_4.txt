@@ -1,0 +1,8 @@
+DO Analysis Qt 2026.07.28.4
+
+- Removed the Analyze button from the user interface.
+- Automatically starts analysis after selecting files or a folder.
+- Automatically starts analysis after dropping files, folders, or ZIP archives.
+- Keeps file/folder import controls disabled while analysis is running to prevent overlapping jobs.
+- Preserves ZIP auto-discovery, collapsible controls, chart maximization, and Value popup ON/OFF.
+- Includes version.json and GitHub/Nuitka/PyInstaller build BAT files.

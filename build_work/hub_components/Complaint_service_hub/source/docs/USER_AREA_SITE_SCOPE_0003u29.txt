@@ -1,0 +1,9 @@
+Complaint Service Hub 0003u29
+
+- InSightec users can view all Sites.
+- Non-InSightec users can view only Sites explicitly assigned to their effective logged-in People-master record.
+- Supported scope fields: assigned_sites, sites, site_scope, assigned_countries, countries, country.
+- Company/distributor names are never mapped to countries. GEMS Taiwan and ProChime country assumptions are not present.
+- If a distributor user has no assigned area, no Site is shown (secure default).
+- Shared users use the selected Actual User scope.
+- Default People master display name changed from Hara to Tetsuya Hara; email and permission remain unchanged.

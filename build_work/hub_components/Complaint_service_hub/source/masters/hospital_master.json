@@ -1,0 +1,1135 @@
+[
+  {
+    "serial": "4278",
+    "hospital_name": "Yokosuka",
+    "country": "Japan",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "Siemens",
+    "magnetic_field": "3T",
+    "mr_product": "Artist",
+    "insightec_owner": "Masaki",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4259",
+    "hospital_name": "CIMC",
+    "country": "Japan",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "1.5T",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4257",
+    "hospital_name": "Tsukazaki",
+    "country": "Japan",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "1.5T",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4087",
+    "hospital_name": "Kyokuto",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4048",
+    "hospital_name": "Kitano",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "1.5T",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4083",
+    "hospital_name": "Kashiwaba",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4078",
+    "hospital_name": "Fukuoka",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4065",
+    "hospital_name": "Miyagi",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4073",
+    "hospital_name": "Atsuchi",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4059",
+    "hospital_name": "ToyodaEisei",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4041",
+    "hospital_name": "Nagoya",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4027",
+    "hospital_name": "ShonanFujisawa",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4034",
+    "hospital_name": "Kumagaya",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4028",
+    "hospital_name": "Kojinkai",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4032",
+    "hospital_name": "Ohnishi",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4017",
+    "hospital_name": "Hokuto",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4010",
+    "hospital_name": "Shinyuri",
+    "country": "Japan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "42188",
+    "hospital_name": "Saitama",
+    "country": "Japan",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4075",
+    "hospital_name": "SNUH",
+    "country": "Korea",
+    "system": "ExAblate4000 V1",
+    "type": "650+220",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Masaki",
+    "distributor": "GEMS",
+    "distributor_fes": [
+      "Eom",
+      "Hong",
+      "Lee",
+      "Yoon"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "42110",
+    "hospital_name": "KUMC",
+    "country": "Korea",
+    "system": "ExAblate4000 V2",
+    "type": "650+220",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Masaki",
+    "distributor": "GEMS",
+    "distributor_fes": [
+      "Eom",
+      "Hong",
+      "Lee",
+      "Yoon"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4210",
+    "hospital_name": "SMC",
+    "country": "Korea",
+    "system": "ExAblate4000 V2",
+    "type": "650+220",
+    "mr_company": "Siemens",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Masaki",
+    "distributor": "GEMS",
+    "distributor_fes": [
+      "Eom",
+      "Hong",
+      "Lee",
+      "Yoon"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4279",
+    "hospital_name": "AMC",
+    "country": "Korea",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Masaki",
+    "distributor": "GEMS",
+    "distributor_fes": [
+      "Eom",
+      "Hong",
+      "Lee",
+      "Yoon"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4009",
+    "hospital_name": "YUMC",
+    "country": "Korea",
+    "system": "ExAblate4000 V1",
+    "type": "650+220",
+    "mr_company": "GE",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Masaki",
+    "distributor": "GEMS",
+    "distributor_fes": [
+      "Eom",
+      "Hong",
+      "Lee",
+      "Yoon"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "42103",
+    "hospital_name": "KIMS",
+    "country": "India",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "HERO",
+    "insightec_owner": "Roger",
+    "distributor": "Vattikuti",
+    "distributor_fes": [
+      "Vijay"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "40108",
+    "hospital_name": "Royal Care Specialty Hospital",
+    "country": "India",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "Architect",
+    "insightec_owner": "Roger",
+    "distributor": "Vattikuti",
+    "distributor_fes": [
+      "Vijay"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "42113",
+    "hospital_name": "SGRH",
+    "country": "India",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "Siemens",
+    "magnetic_field": "3T",
+    "mr_product": "Vida",
+    "insightec_owner": "Roger",
+    "distributor": "Vattikuti",
+    "distributor_fes": [
+      "Vijay"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4231",
+    "hospital_name": "CMC",
+    "country": "India",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "Siemens",
+    "magnetic_field": "3T",
+    "mr_product": "Vida",
+    "insightec_owner": "Masaki",
+    "distributor": "Vattikuti",
+    "distributor_fes": [
+      "Vijay"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4258",
+    "hospital_name": "Florey",
+    "country": "Australia",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "Siemens",
+    "magnetic_field": "3T",
+    "mr_product": "Vida",
+    "insightec_owner": "Roger",
+    "distributor": "Device Technologies",
+    "distributor_fes": [
+      "Bruno"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4267",
+    "hospital_name": "GCUH",
+    "country": "Australia",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "Siemens",
+    "magnetic_field": "3T",
+    "mr_product": "Vida",
+    "insightec_owner": "Roger",
+    "distributor": "Device Technologies",
+    "distributor_fes": [
+      "Bruno"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4058",
+    "hospital_name": "ST.VINCENT",
+    "country": "Australia",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "Architect",
+    "insightec_owner": "Roger",
+    "distributor": "Device Technologies",
+    "distributor_fes": [
+      "Bruno"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4038",
+    "hospital_name": "SHOW CHWAN",
+    "country": "Taiwan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "1.5T",
+    "mr_product": "Optima 450W",
+    "insightec_owner": "Roger",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4068",
+    "hospital_name": "TMU",
+    "country": "Taiwan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "750",
+    "insightec_owner": "Roger",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4052",
+    "hospital_name": "CMUH",
+    "country": "Taiwan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "1.5T",
+    "mr_product": "Optima 450W",
+    "insightec_owner": "Roger",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4089",
+    "hospital_name": "VGH",
+    "country": "Taiwan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "Architect",
+    "insightec_owner": "Roger",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "40106",
+    "hospital_name": "NTUH",
+    "country": "Taiwan",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "1.5T",
+    "mr_product": "Artist",
+    "insightec_owner": "Roger",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "40902",
+    "hospital_name": "CSMU",
+    "country": "Taiwan",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "750W",
+    "insightec_owner": "Roger",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4288",
+    "hospital_name": "CCH",
+    "country": "Taiwan",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "Siemens",
+    "magnetic_field": "3T",
+    "mr_product": "Vida",
+    "insightec_owner": "Roger",
+    "distributor": "NA",
+    "distributor_fes": [],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "4056",
+    "hospital_name": "Siriraj",
+    "country": "Thailand",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "Architect",
+    "insightec_owner": "Nakahodo",
+    "distributor": "Device Technologies",
+    "distributor_fes": [
+      "Golf"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4081",
+    "hospital_name": "Chulabhorn",
+    "country": "Thailand",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "3T",
+    "mr_product": "Architect",
+    "insightec_owner": "Nakahodo",
+    "distributor": "Device Technologies",
+    "distributor_fes": [
+      "Golf"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4076",
+    "hospital_name": "PGH MANILA",
+    "country": "Philippines",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "GE",
+    "magnetic_field": "1.5T",
+    "mr_product": "Artist",
+    "insightec_owner": "Nakahodo",
+    "distributor": "Device Technologies",
+    "distributor_fes": [
+      "Golf"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "42116",
+    "hospital_name": "Shanghai Mental Heal",
+    "country": "China",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "40114",
+    "hospital_name": "Nanjing",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4060",
+    "hospital_name": "Xian JiaoTao",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "40116",
+    "hospital_name": "Xiamen Hospital",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4280",
+    "hospital_name": "TUEN MUN",
+    "country": "China",
+    "system": "ExAblate4000 V2",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V2"
+  },
+  {
+    "serial": "40118",
+    "hospital_name": "GoBroad Hospital Bij",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "40115",
+    "hospital_name": "HENAN NEURO",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "40107",
+    "hospital_name": "BJ TIANTAN PUHUA H",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "40102",
+    "hospital_name": "SIMC SHANGHAI",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4097",
+    "hospital_name": "HK U SHENZHEN",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "40900",
+    "hospital_name": "FOSHAN TCM HOSPITAL",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  },
+  {
+    "serial": "4029",
+    "hospital_name": "PLA 301 Beijing",
+    "country": "China",
+    "system": "ExAblate4000 V1",
+    "type": "650",
+    "mr_company": "",
+    "magnetic_field": "",
+    "mr_product": "",
+    "insightec_owner": "Roger",
+    "distributor": "Fosun InSightec",
+    "distributor_fes": [
+      "Tony",
+      "Siyu",
+      "Harry"
+    ],
+    "software_versions": [
+      "4.25",
+      "4.26",
+      "6.24",
+      "6.26"
+    ],
+    "system_number": "ExAblate4000 V1"
+  }
+]

@@ -1,0 +1,7 @@
+0003u22 changes
+- Fixed ComplaintDialog MR information startup/runtime error by creating mr_info before serial synchronization.
+- Added read-only MR Info field to System Information.
+- Clears stale MR information when no matching system is selected.
+- Increased global UI font sizes and minimum control heights for readability.
+- Updated version.json and app_version.json to 0003u22.
+- Regression checks: syntax compilation, import, startup dialog, main window, complaint dialog, master manager, feedback dialog, settings dialog, and version consistency.

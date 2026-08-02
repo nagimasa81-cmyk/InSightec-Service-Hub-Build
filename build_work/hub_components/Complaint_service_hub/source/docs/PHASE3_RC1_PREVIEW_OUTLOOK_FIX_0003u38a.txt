@@ -1,0 +1,32 @@
+Complaint Service Hub Commit 0003u38a
+Phase 3 RC1 Preview / English / Outlook Fix
+
+ROOT CAUSE
+- Investigation and Closure tabs are lazy-loaded.
+- Preview, English validation and Outlook generation referenced widgets from those tabs before creation.
+- AttributeError occurred inside Qt button callbacks.
+- Console-disabled EXE hid the traceback, making buttons appear unresponsive.
+
+FIXES
+1. Safe placeholders for all lazy-loaded fields.
+2. _widget_text accepts fields that have not been created yet.
+3. English validation reads fields through safe getattr access.
+4. Preview payload works before Investigation or Closure is opened.
+5. Outlook COM explicitly initializes and tries ActiveObject, then CreateObject.
+6. Debug runner installs comtypes.
+
+REGRESSION TESTS
+A. Open a new complaint and go directly to Preview without opening Investigation or Closure.
+   Expected: Preview text is displayed.
+B. Enter Japanese text into Subject or Description and press Check English.
+   Expected: Non-English warning is displayed.
+C. Replace it with English text and press Check English.
+   Expected: English check OK message is displayed.
+D. Complete required Basic, Medical and Additional fields and press Create Outlook Draft.
+   Expected: Mail preview appears first.
+E. Confirm mail preview while Outlook is running.
+   Expected: Outlook draft window opens.
+F. Confirm mail preview while Outlook is not running.
+   Expected: COM starts/connects to Outlook, or a clear retry/template dialog appears.
+G. Select Template output.
+   Expected: Copy To, Subject, Body and All buttons copy the corresponding content and show completion messages.

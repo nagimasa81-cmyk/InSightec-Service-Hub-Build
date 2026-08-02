@@ -1,0 +1,14 @@
+Complaint Service Hub Commit 0003u15
+
+Required workflow behavior:
+1. Read build_config.json before auto-detecting Python entry points.
+2. When build_script is present, run BUILD_EXE.bat.
+3. Package artifact_path: dist/Complaint_Service_Hub.
+4. Validate all three EXEs and BUILD_INFO.txt.
+5. Do not run the generic PyInstaller main.py path for this module.
+
+Expected BUILD_INFO.txt:
+BuildMode=standalone
+BuildEngine=Nuitka
+PySide6=Included
+EntryPoint=Complaint_Service_Hub_Launcher.exe

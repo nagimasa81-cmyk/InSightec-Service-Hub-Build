@@ -1,0 +1,10 @@
+Complaint Service Hub 0003u35
+
+Changes
+- Model remains 650 after a Serial is selected.
+- Serial still updates Product, MR information, owner and internal Distributor FE linkage.
+- Rebuilt complaint mailing routes from the supplied mailing workbook.
+- Replaced masters/source/mailing.xlsx with the supplied workbook.
+- Normalized route labels: Phillipine -> Philippines and Conplaint China -> China internally.
+- Normalized Hara display name to Tetsuya Hara and Distributer role spelling to Distributor in generated recipients.
+- Updated version metadata and build artifact names to 0003u35.

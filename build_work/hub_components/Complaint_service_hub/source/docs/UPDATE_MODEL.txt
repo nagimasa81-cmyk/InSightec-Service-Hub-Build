@@ -1,0 +1,14 @@
+Update model from Build 0002u3
+
+1. Master Update
+- Updates config/masters/templates/profiles only.
+- Can be applied from Hub > Update ZIP.
+- Does not replace EXE files.
+
+2. Program Update
+- Updates Hub program files, Launcher/Updater scripts, resources, and version files.
+- Hub stages the ZIP to updates/pending_program_update.zip.
+- Close Hub and start Complaint_Service_Hub_Launcher.exe.
+- Launcher runs Updater first, then starts Hub.
+
+This build avoids tkinter completely. The UI is PySide6. Launcher and Updater use only the Python standard library.

@@ -1,0 +1,5 @@
+Commit0003u20
+- Fixed Country reverting after manual changes by removing invalid old Hospital restoration.
+- Country, Hospital and Serial lists are scoped to the company selected at startup.
+- InSightec sees all sites. Distributor companies see only their assigned countries and systems.
+- Added Logout button to switch company/user without restarting the application.

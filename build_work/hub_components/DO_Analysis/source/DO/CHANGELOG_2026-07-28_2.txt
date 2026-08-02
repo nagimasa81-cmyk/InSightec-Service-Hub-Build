@@ -1,0 +1,11 @@
+DO Analysis Qt 2026.07.28.2
+
+- Added a collapsible Import / Settings panel above the chart area.
+- The application starts in compact mode to maximize the chart.
+- Analysis completion automatically switches to the Chart tab and folds the upper panel.
+- Added Displayed file selector directly on the Chart tab.
+- Added previous and next file buttons for rapid file switching.
+- Kept Reload for re-reading the selected source file.
+- Enlarged the default chart share in the vertical splitter.
+- Preserved ZIP drag-and-drop import and recursive target-file discovery.
+- Updated version.json.

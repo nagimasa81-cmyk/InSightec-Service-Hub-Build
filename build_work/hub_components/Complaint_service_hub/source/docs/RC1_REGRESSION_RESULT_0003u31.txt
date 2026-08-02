@@ -1,0 +1,20 @@
+RC1 Regression Result - Commit 0003u32
+Date: 2026-07-24
+
+PASS
+- All Python files parsed and compiled with py_compile.
+- All JSON files loaded successfully.
+- ComplaintDialog self-widget static audit: no undefined references detected.
+- mr_info and distributor_fe are created before use.
+- Investigation and Closure tabs are disabled during new Complaint intake.
+- Navigation skips disabled tabs.
+- Golf role, organization display mapping and Thailand/Philippines scope validated.
+- Tony Distributor FE role and China scope validated.
+- Hospital country spelling normalized to Philippines.
+- Thailand/Philippines/China site records include expected Distributor FE linkage.
+- version.json, app_version.json and manifest.json all report 0003u32.
+- Build scripts and source-root layout retained.
+
+ENVIRONMENT LIMITATION
+- PySide6 is not installed in the packaging environment, so an offscreen Qt construction test and EXE launch test could not be executed here.
+- Required final checks after GitHub Actions build: EXE double-click startup, Complaint window opening, calendar popup, DPI 125/150/175%, and Master Manager interaction.

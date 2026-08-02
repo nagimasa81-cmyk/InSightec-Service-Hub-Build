@@ -1,0 +1,43 @@
+{
+  "profile_name": "Default Medical Device Complaint",
+  "target_title": "New Complaint: Medical Device",
+  "fields": [
+    {
+      "source": "complaint_subject",
+      "salesforce_label": "Complaint Subject",
+      "type": "text"
+    },
+    {
+      "source": "serial",
+      "salesforce_label": "Serial Number",
+      "type": "text"
+    },
+    {
+      "source": "complaint_description",
+      "salesforce_label": "Complaint Description",
+      "type": "textarea"
+    },
+    {
+      "source": "country",
+      "salesforce_label": "Country",
+      "type": "text"
+    },
+    {
+      "source": "hospital_name",
+      "salesforce_label": "Hospital Name",
+      "type": "text"
+    },
+    {
+      "source": "software_version",
+      "salesforce_label": "Software Version",
+      "type": "text"
+    },
+    {
+      "source": "date_reported",
+      "salesforce_label": "Date Reported",
+      "type": "date"
+    }
+  ],
+  "workflow_version": "1.0",
+  "target_url": ""
+}

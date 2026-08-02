@@ -1,0 +1,20 @@
+Complaint Service Hub 0003u39
+
+Implemented
+- Settings > Output Mode is applied when a new Complaint window opens.
+- When the saved setting is Template, the complaint starts in Template mode and does not inspect, connect to, or start Outlook.
+- Preview now contains an Output Mode selector: Outlook / Template.
+- Preview and Additional tab output selectors remain synchronized for the current complaint.
+- The action button changes between Create Outlook Draft and Open Template.
+- Switching in Preview affects only the currently open complaint; it does not overwrite the Settings default.
+- Choosing Template after an Outlook connection failure changes the current complaint to Template mode.
+- Classic Outlook startup now searches Windows App Paths, 32/64-bit Office locations, PATH, and the outlook: shell URI instead of relying only on outlook.exe being in PATH.
+
+Compatibility
+- Automatic draft creation requires Classic Outlook COM automation.
+- New Outlook does not expose the same COM automation interface; Template mode is the supported fallback.
+
+Validation
+- Python syntax compilation passed for hub_app.py.
+- Source package checked to avoid nested ZIP output.
+- Runtime Qt UI test was not executed in the build container because PySide6 is not installed there; GitHub/Nuitka build remains the execution validation path.

@@ -1,0 +1,7 @@
+Commit0003u19
+- Startup company list: InSightec plus each distributor organization.
+- Device Technologies display name changed to Device Technology.
+- Distributor selection filters Distributor FE users by organization.
+- InSightec blank password enters User Mode.
+- Correct password enters Admin Mode; incorrect non-empty password is rejected.
+- Global fonts, labels, buttons, inputs, navigation and startup dialog enlarged.

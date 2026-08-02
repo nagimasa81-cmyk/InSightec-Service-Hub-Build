@@ -1,0 +1,10 @@
+DO Analysis Qt 2026.07.28.7
+
+- Added collapsible Range Analysis panel on the Chart tab.
+- Added Enable Range Analysis switch: OFF keeps drag-to-zoom; ON changes mouse drag to interval analysis.
+- Selectable parameters: DO Level, Vacuum, 2nd Flow, Primary Flow, Chiller Temperature, Absolute Pressure and Dynamic Pressure.
+- Calculates Average, Minimum, Maximum, Peak-to-Peak, population Standard Deviation, CV, RMS noise, linear slope per minute, duration and sample count.
+- Highlights the selected interval and draws the selected parameter average line.
+- Optional chart result overlay.
+- Added Copy Result, Export Range CSV and Clear Range controls.
+- Existing ZIP auto-import, auto-analysis, pause labels, guide/tour and build BAT files remain included.

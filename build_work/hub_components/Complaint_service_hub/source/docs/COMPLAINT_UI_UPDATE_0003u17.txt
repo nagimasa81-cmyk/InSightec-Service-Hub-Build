@@ -1,0 +1,1 @@
+Commit0003u17: all complaint date fields use QDateEdit calendar popups. Salesforce list values from the supplied screenshots were added for Usage Type, Treatment Indication, Treatment Application, Business Unit, Received Mode, Complaint Source, and Adverse Event Occurred.

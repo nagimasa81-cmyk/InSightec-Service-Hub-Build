@@ -1,0 +1,7 @@
+DO Analysis Qt 2026.07.28.3
+
+- Import / Settings area remains collapsible and starts folded to maximize the chart.
+- Added a Value popup checkbox immediately to the right of Non-event labels.
+- Value popup is ON by default and can be disabled without affecting cross-chart zoom.
+- Saved projects preserve the Value popup setting.
+- Included updated version.json.

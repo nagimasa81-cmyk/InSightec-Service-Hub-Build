@@ -1,0 +1,25 @@
+Complaint Service Hub 0003u38 - Phase 3
+
+Implemented:
+- Outlook process detection and default mail app guidance
+- COM connection retries and 15-second startup wait timeout
+- Mail preview and attachment confirmation
+- Template Copy To / Subject / Body / All with completion messages
+- Background master data preloading
+- Lazy loading for Investigation, Closure and Preview tabs
+- Required-field red asterisk and completed-field green check
+- Guide do-not-show-again, direct navigation, and create-complaint action
+- Structured error logging and updated version metadata
+
+Regression checklist:
+1. Python debug launch
+2. Startup login for InSightec and distributor
+3. Complaint Basic/Medical/Additional required validation
+4. Completion 100% status
+5. Outlook running / not running / COM unavailable
+6. Outlook non-default mail application guidance
+7. Template individual copy actions
+8. Attachment confirmation
+9. Lazy tab first-open and repeated switching
+10. Guide startup/skip/do-not-show/navigation/create complaint
+11. Nuitka build and distribution validation

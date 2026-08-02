@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "module": "Complaint_Service_Hub",
+  "build_mode": "build_script",
+  "build_engine": "nuitka_standalone",
+  "build_script": "BUILD_EXE.bat",
+  "artifact_path": "dist/Complaint_Service_Hub",
+  "entrypoint": "Complaint_Service_Hub_Launcher.exe",
+  "allow_python_fallback": false,
+  "required_executables": [
+    "Complaint_Service_Hub_Launcher.exe",
+    "Complaint_Service_Hub.exe",
+    "Complaint_Service_Hub_Updater.exe"
+  ]
+}

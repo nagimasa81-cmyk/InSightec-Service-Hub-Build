@@ -1,0 +1,9 @@
+Complaint Service Hub 0003u34
+
+Implemented defaults and calendar behavior:
+- Model default display is 650 on initial load and after Country/Hospital changes.
+- Hospital-specific model choices remain available; selecting a Serial can update Model to the exact registered system type.
+- Software Version defaults to 7.33 and remains selected when lists are refreshed, unless the user already selected another valid version.
+- Every calendar popup opens on the current month without forcing blank optional date fields to today.
+- Existing Hospital -> Model -> Serial linkage, FE mapping, and localization are preserved.
+- Version metadata and build artifact names updated to 0003u34.

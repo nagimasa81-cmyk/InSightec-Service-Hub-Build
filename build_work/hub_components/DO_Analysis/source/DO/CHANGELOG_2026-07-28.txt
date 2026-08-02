@@ -1,0 +1,18 @@
+DO Analysis Qt - ZIP Drop Import
+
+Implemented:
+- Drag and drop support for ZIP archives, folders, and individual log files.
+- ZIP content is recursively scanned.
+- Only .txt/.log/.csv files with the required WaterSystem header and DO/Vacuum columns are loaded.
+- Multiple dropped inputs are supported and duplicates are removed.
+- Secure ZIP extraction blocks path traversal entries.
+- Temporary extracted data is deleted when the application closes.
+- Select Files dialog now accepts ZIP archives.
+- Added visible drop area and import status messages.
+- Added version.json.
+- Retained Nuitka and PyInstaller build BAT files.
+
+Validation performed:
+- Python syntax compilation: PASS.
+- Package structure/build scripts: PASS.
+- GUI runtime test was not executed in this Linux sandbox because PySide6 is not installed.
