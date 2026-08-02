@@ -1,5 +1,5 @@
 {
-  "schema": "insightec.module.v1",
+  "schema": "insightec.module.v2",
   "id": "Complaint_service_hub",
   "display_name": "Complaint Service Hub",
   "artifact_name": "Complaint",
@@ -9,5 +9,22 @@
   "build_script": "01_BUILD_EXE_NUITKA.bat",
   "supports_reuse": true,
   "supports_hub": true,
-  "hub_tool_folder": "ComplaintServiceHub"
+  "hub_tool_folder": "ComplaintServiceHub",
+  "source_entry_point": "launcher.py",
+  "registry_contract": true,
+  "output_directories": [
+    "dist/Complaint_Service_Hub"
+  ],
+  "expected_exe_patterns": [
+    "Complaint_Service_Hub_Launcher.exe",
+    "Complaint_Service_Hub.exe",
+    "Complaint_Service_Hub_Updater.exe"
+  ],
+  "required_executables": [
+    "Complaint_Service_Hub_Launcher.exe",
+    "Complaint_Service_Hub.exe",
+    "Complaint_Service_Hub_Updater.exe"
+  ],
+  "smoke_executable": "Complaint_Service_Hub_Launcher.exe",
+  "main_executable": "Complaint_Service_Hub.exe"
 }
