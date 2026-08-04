@@ -197,8 +197,55 @@ class SonicationPipeline:
             raise
         self._copy_diagnostics()
 
+    def _install_source_requirements(self, log: StageLogger):
+        """Install Sonication SOURCE requirements before the Stage 2 probe.
+
+        The normal module builder installs ``requirements*.txt`` before it pins
+        Nuitka.  The Hub Sonication pipeline previously ran its import probe
+        *before* entering that builder, so packages such as numpy and pyqtgraph
+        were absent even though the same SOURCE built successfully as a module.
+        Keep both routes equivalent by using the same requirement discovery and
+        the same Python interpreter here.
+        """
+        import subprocess
+
+        requirement_files = detect_requirements(self.ctx.source_root)
+        install_log = self.diag_root / "stage2_requirements_install.log"
+        records = []
+        if not requirement_files:
+            message = "No requirements*.txt found under Sonication SOURCE root"
+            install_log.write_text(message + "\n", encoding="utf-8")
+            log.write(message)
+            return
+
+        for requirement in requirement_files:
+            relative = str(requirement.relative_to(self.ctx.source_root)).replace("\\", "/")
+            command = [
+                sys.executable, "-m", "pip", "install",
+                "--disable-pip-version-check", "-r", str(requirement),
+            ]
+            log.write(f"Installing Sonication requirements: {relative}")
+            completed = subprocess.run(
+                command, cwd=str(requirement.parent), capture_output=True, text=True,
+                encoding="utf-8", errors="replace", check=False,
+            )
+            output = (completed.stdout or "") + (completed.stderr or "")
+            records.append(
+                f"===== {relative} =====\n"
+                f"python={sys.executable}\n"
+                f"command={' '.join(command)}\n"
+                f"returncode={completed.returncode}\n"
+                f"{output.rstrip()}\n"
+            )
+            if completed.returncode != 0:
+                install_log.write_text("\n".join(records), encoding="utf-8")
+                raise RuntimeError(f"Failed to install Sonication requirements: {relative}")
+
+        install_log.write_text("\n".join(records), encoding="utf-8")
+        log.write(f"Installed {len(requirement_files)} Sonication requirement file(s) with {sys.executable}")
+
     def _ensure_deterministic_nuitka(self, log: StageLogger):
-        """Reset the shared runner toolchain before the dedicated Sonication build.
+        """Install SOURCE dependencies, then pin and verify the compiler toolchain.
 
         Hub assembly builds several modules in one Python environment. A previous
         module can install an older Nuitka release. The Sonication BAT requests
@@ -207,6 +254,11 @@ class SonicationPipeline:
         Nuitka 4.1.3 packages the current PySide6/pyqtgraph set correctly.
         """
         import subprocess
+
+        # This must happen before the import probe.  BaseBuilder performs the same
+        # installation again later, which is intentionally harmless and keeps the
+        # standalone Module and Service Hub routes behaviorally aligned.
+        self._install_source_requirements(log)
 
         required = "Nuitka==4.1.3"
         command = [
@@ -226,13 +278,17 @@ class SonicationPipeline:
 
         probe = subprocess.run(
             [sys.executable, "-c",
-             "import nuitka, PySide6, PySide6.QtOpenGL, PySide6.QtOpenGLWidgets, pyqtgraph; "
+             "import nuitka, PySide6, PySide6.QtOpenGL, PySide6.QtOpenGLWidgets, pyqtgraph, numpy; "
              "import importlib.metadata as m; "
+             "print('Python=' + __import__('sys').executable); "
              "print('Nuitka=' + m.version('Nuitka')); "
              "print('PySide6=' + PySide6.__version__); "
              "print('pyqtgraph=' + pyqtgraph.__version__); "
+             "print('numpy=' + numpy.__version__); "
              "print('QtOpenGL=' + PySide6.QtOpenGL.__file__); "
-             "print('QtOpenGLWidgets=' + PySide6.QtOpenGLWidgets.__file__)"],
+             "print('QtOpenGLWidgets=' + PySide6.QtOpenGLWidgets.__file__); "
+             "import importlib.util as u; "
+             "print('cv2=' + ('available' if u.find_spec('cv2') else 'not-required-or-unavailable'))"],
             cwd=str(self.ctx.source_root), capture_output=True, text=True,
             encoding="utf-8", errors="replace", check=False,
         )
