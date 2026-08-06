@@ -1,0 +1,113 @@
+name: Build MATLAB FIG Viewer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Module/MATLAB_FIG_Viewer/*.zip"
+      - ".github/workflows/build_matlab_fig_viewer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest source ZIP
+        shell: pwsh
+        run: |
+          $module = Join-Path $env:GITHUB_WORKSPACE "Module/MATLAB_FIG_Viewer"
+          if (-not (Test-Path $module)) {
+            throw "Module folder not found: $module"
+          }
+          $zip = Get-ChildItem -Path $module -Filter "*.zip" -File |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          if (-not $zip) {
+            throw "No source ZIP found in $module"
+          }
+          "SOURCE_ZIP=$($zip.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Selected source: $($zip.Name)"
+
+      - name: Extract source ZIP
+        shell: pwsh
+        run: |
+          $extract = Join-Path $env:RUNNER_TEMP "matlab_fig_viewer_source"
+          if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          Expand-Archive -Path $env:SOURCE_ZIP -DestinationPath $extract -Force
+
+          $entry = Get-ChildItem -Path $extract -Filter "matlab_fig_viewer.py" -File -Recurse |
+            Select-Object -First 1
+          if (-not $entry) {
+            throw "matlab_fig_viewer.py was not found in the source ZIP"
+          }
+          $sourceRoot = $entry.Directory.FullName
+          "SOURCE_ROOT=$sourceRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Source root: $sourceRoot"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: "Module/MATLAB_FIG_Viewer/*.zip"
+
+      - name: Validate source
+        shell: pwsh
+        run: |
+          Set-Location $env:SOURCE_ROOT
+          python -m py_compile matlab_fig_viewer.py
+          if (-not (Test-Path "03_BUILD_EXE_CI.bat")) { throw "03_BUILD_EXE_CI.bat was not found" }
+          if (-not (Test-Path "requirements.txt")) { throw "requirements.txt was not found" }
+
+      - name: Build EXE
+        shell: cmd
+        run: |
+          cd /d "%SOURCE_ROOT%"
+          call 03_BUILD_EXE_CI.bat
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:SOURCE_ROOT "dist/MATLAB_FIG_Viewer/MATLAB_FIG_Viewer.exe"
+          if (-not (Test-Path $exe)) {
+            throw "EXE was not generated: $exe"
+          }
+          $size = (Get-Item $exe).Length
+          if ($size -lt 100000) {
+            throw "Generated EXE is unexpectedly small: $size bytes"
+          }
+          Write-Host "EXE verification PASS: $size bytes"
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $dist = Join-Path $env:SOURCE_ROOT "dist/MATLAB_FIG_Viewer"
+          $versionFile = Join-Path $env:SOURCE_ROOT "version.json"
+          $version = "unknown"
+          if (Test-Path $versionFile) {
+            $version = (Get-Content $versionFile -Raw | ConvertFrom-Json).version
+          }
+          $stage = Join-Path $env:RUNNER_TEMP "MATLAB_FIG_Viewer"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          Copy-Item $dist $stage -Recurse
+          $artifactName = "MATLAB_FIG_Viewer_v$version_Windows"
+          $artifactZip = Join-Path $env:RUNNER_TEMP "$artifactName.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath $artifactZip -Force
+          "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ARTIFACT_ZIP=$artifactZip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_ZIP }}
+          if-no-files-found: error
+          retention-days: 30
