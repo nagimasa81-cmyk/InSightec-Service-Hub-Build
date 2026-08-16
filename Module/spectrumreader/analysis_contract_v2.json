@@ -1,0 +1,43 @@
+{
+  "contract_version": "3.3",
+  "pipeline": [
+    "energy_panel_detection",
+    "plot_geometry_detection",
+    "channel_checkbox_detection",
+    "foreground_trace_isolation",
+    "mode_resolution",
+    "horizontal_region_resolution",
+    "y_axis_calibration",
+    "numeric_conversion",
+    "spec_decision"
+  ],
+  "rules": {
+    "auto_roi": "position_neutral; reject low-confidence candidates; never substitute Raw Data/Spectrum/general dark rectangle",
+    "channel": "exactly one checked checkbox => confirm that channel; multiple checked => confirm only when foreground trace color matches one of the selected known channel colors, otherwise Unknown; Unknown never blocks signal/Low/High analysis",
+    "foreground": "calculate one visible foreground trace only; never average overlaid channels",
+    "gain_regions": "automatic stable low plateau + transition exclusion + stable high plateau; no fixed X split",
+    "noise_regions": "fixed Sample#270 boundary retained",
+    "y_axis": "read visible left-axis numeric labels independent of current Gain/Noise guess; fit multiple readable anchors jointly; visible label family may correct Auto mode; never assume bottom gridline is zero",
+    "overlay": "draw directly from measured trace pixel positions; do not regenerate line position from numeric value",
+    "failure": "if panel/plot/trace/mode/y calibration is unresolved, return no numeric result and no SPEC decision",
+    "plot_geometry": "plot confirmation is never a hard stop by itself; use major-grid, relaxed-grid, dark-plot, then ROI-estimate fallback and report geometry source/confidence",
+    "noise_low_high": "Noise Low/High are separated by semantic Sample# position (Low <=270, High >=270) with an excluded transition margin; amplitude difference is not required. Each side is independently robust-filtered and may legitimately have nearly equal values.",
+    "gain_low_high": "Gain uses automatic signal transition/plateau detection; if transition confidence is low, use conservative outer stable plateaus with low confidence rather than stopping."
+  },
+  "spec": {
+    "gain_high": [
+      1.0,
+      1.5
+    ],
+    "noise_low": [
+      0.0,
+      0.015
+    ],
+    "noise_high": [
+      0.001,
+      0.02
+    ]
+  },
+  "noise_sample_split": 270,
+  "sample_axis_max": 500
+}

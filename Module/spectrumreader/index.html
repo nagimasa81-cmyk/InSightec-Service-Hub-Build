@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Energy Scan" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+  <link rel="stylesheet" href="./styles.css?v=6.3.4" />
+  <title>Energy Graph Scan iPhone</title>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Energy Graph Scan</h1>
+      <div class="sub">iPhone v6.3.4</div>
+    </div>
+    <button id="resetBtn" class="ghost">Reset</button>
+  </header>
+
+  <main>
+    <section class="capture-card">
+      <div class="mode-row">
+        <label>Analysis
+          <select id="modeSelect">
+            <option value="Auto">Auto</option>
+            <option value="Gain">Gain</option>
+            <option value="Noise">Noise</option>
+          </select>
+        </label>
+      </div>
+      <div class="button-row">
+        <button id="cameraBtn" class="primary" type="button">写真を撮る</button>
+        <input id="cameraInput" class="hidden-input" type="file" accept="image/*" capture="environment">
+        <label class="secondary file-button">写真を選ぶ<input id="photoInput" type="file" accept="image/*"></label>
+      </div>
+      <div class="hint">画面全体を撮影し、Energy per BandグラフとChannel欄が入るようにしてください。</div>
+    </section>
+
+    <section class="viewer-card">
+      <div id="stage" class="stage empty">
+        <canvas id="canvas"></canvas>
+        <div id="roi" class="roi hidden">
+          <div class="roi-label">ROI</div>
+          <div class="roi-handle tl" data-handle="tl"></div>
+          <div class="roi-handle tr" data-handle="tr"></div>
+          <div class="roi-handle bl" data-handle="bl"></div>
+          <div class="roi-handle br" data-handle="br"></div>
+        </div>
+        <div id="placeholder">写真を撮る / 選ぶ</div>
+      </div>
+      <div class="button-row">
+        <button id="autoDetectBtn" class="secondary" disabled>Auto ROI</button>
+        <button id="manualBtn" class="secondary" disabled>ROI調整</button>
+        <button id="analyzeBtn" class="primary" disabled>Analyze</button>
+      </div>
+      <div id="status" class="status">Ready</div>
+    </section>
+
+
+    <section id="processingPanel" class="processing-panel hidden" aria-live="polite">
+      <div class="processing-head">
+        <div>
+          <div id="processingTitle" class="processing-title">Processing…</div>
+          <div id="processingStage" class="processing-stage">Preparing</div>
+        </div>
+        <div id="processingPercent" class="processing-percent">0%</div>
+      </div>
+      <div class="processing-track"><div id="processingBar" class="processing-bar"></div></div>
+      <div id="processingDetail" class="processing-detail"></div>
+    </section>
+
+    <section id="analysisPreviews" class="preview-card">
+      <div class="preview-wrap">
+        <div class="preview-title">1. Original</div>
+        <canvas id="originalPreview"></canvas>
+        <div class="preview-caption">Original input image</div>
+      </div>
+
+      <div class="preview-wrap">
+        <div class="preview-title-row">
+          <div class="preview-title">2. Rotation corrected — full image</div>
+          <button id="manualGeometryBtn" class="mini-btn" type="button">Manual geometry</button>
+        </div>
+        <canvas id="rotatedPreview"></canvas>
+        <div class="preview-caption" id="rotationCaption">Rotation correction: Auto</div>
+
+        <div id="manualGeometryPanel" class="manual-geometry hidden">
+          <div class="manual-row">
+            <label for="rotationRange">Rotation</label>
+            <input id="rotationRange" type="range" min="-12" max="12" step="0.1" value="0">
+            <input id="rotationNumber" type="number" min="-12" max="12" step="0.1" value="0">
+            <button id="applyRotationBtn" class="mini-btn" type="button">Apply</button>
+            <button id="autoTiltBtn" class="mini-btn" type="button">自動傾き補正</button>
+          </div>
+          <div class="manual-row roi-target-row">
+            <span>ROI edit target</span>
+            <button id="editEnergyROI" class="mini-btn active" type="button">Energy ROI</button>
+            <button id="editChannelROI" class="mini-btn" type="button">Channel ROI</button>
+            <button id="autoGeometryBtn" class="mini-btn" type="button">Auto restore</button>
+          </div>
+          <div class="manual-help">Drag / resize the red ROI on the corrected full image. Energy ROI and Channel ROI are stored independently.</div>
+        </div>
+      </div>
+
+      <div id="channelPreviewWrap" class="preview-wrap hidden">
+        <div class="preview-title">3. Channel detection crop</div>
+        <canvas id="channelPreview"></canvas>
+        <div class="preview-caption"></div>
+        <div class="manual-channel-select">
+          <label for="manualChannelSelect">Final Channel</label>
+          <select id="manualChannelSelect">
+            <option value="">Auto / Unknown</option>
+            <option value="0">CH0</option><option value="1">CH1</option>
+            <option value="2">CH2</option><option value="3">CH3</option>
+            <option value="4">CH4</option><option value="5">CH5</option>
+            <option value="6">CH6</option><option value="7">CH7</option>
+            <option value="8">CH8</option><option value="9">CH9</option>
+            <option value="10">CH10</option><option value="11">CH11</option>
+            <option value="12">CH12</option><option value="13">CH13</option>
+            <option value="14">CH14</option><option value="15">CH15</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="energyPreviewWrap" class="preview-wrap hidden">
+        <div class="preview-title">4. Energy per Band analysis crop</div>
+        <canvas id="energyPreview"></canvas>
+        <div class="preview-caption"></div>
+      </div>
+    </section>
+    <section id="resultCard" class="result-card hidden">
+      <div class="result-top">
+        <div><span class="label">Mode</span><strong id="modeOut">—</strong></div>
+        <div><span class="label">Channel</span><strong id="channelOut">—</strong></div>
+        <div><span class="label">Confidence</span><strong id="confidenceOut">—</strong></div>
+      </div>
+      <div class="values">
+        <div><span>Low</span><strong id="lowOut">—</strong></div>
+        <div><span>High</span><strong id="highOut">—</strong></div>
+        <div><span>Spec</span><strong id="specOut">—</strong></div>
+      </div>
+      <div id="messageOut" class="message"></div>
+    </section>
+
+    <section class="help-card">
+      <details>
+        <summary>判定仕様</summary>
+        <p>v6は回転補正→Channel欄→Energy per Band→Y/X軸→Mode→固定Low/High範囲→スパイク除外平均の順に解析します。Gainは小数2桁、Noiseは小数4桁。Channel未検出はUnknown、複数検出は候補を表示して解析を継続します。</p>
+      </details>
+    </section>
+  </main>
+
+
+  <div id="cameraModal" class="camera-modal hidden" aria-hidden="true">
+    <video id="cameraVideo" autoplay playsinline muted></video>
+    <div class="camera-guide-frame" aria-hidden="true"><span>Energy per Band + Channel</span></div>
+    <div class="camera-note">枠内に Energy per Band と Channel欄が入るように撮影</div>
+    <div id="cameraState" class="camera-state">カメラ準備中…</div>
+    <div class="camera-controls">
+      <button id="cameraCancel" class="camera-secondary" type="button">キャンセル</button>
+      <button id="cameraShutter" class="camera-shutter" type="button" aria-label="撮影" disabled></button>
+      <button id="cameraRetry" class="camera-secondary" type="button">再試行</button>
+    </div>
+  </div>
+
+  <script src="./core.js?v=6.3.4"></script>
+  <script src="./analysis_core_v2.js?v=6.3.4"></script>
+  <script src="./robust_core_v3.js?v=6.3.4"></script>
+  <script src="./canonical_registration_v4.js?v=6.3.4"></script>
+  <script src="./app.js?v=6.3.4"></script>
+</body>
+</html>

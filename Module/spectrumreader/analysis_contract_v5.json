@@ -1,0 +1,128 @@
+{
+  "contract_version": "5.0",
+  "engine": "Robust Analysis Core v3",
+  "principles": [
+    "No single detector is authoritative except explicit manual mode and a single visually checked channel.",
+    "A failed detector must not abort the whole analysis.",
+    "All stages emit hypotheses with confidence and evidence.",
+    "Final values require geometry, axis and trace hypotheses to be mutually consistent.",
+    "Overlay geometry and numeric geometry must come from the same selected hypothesis.",
+    "Unknown channel is valid and must not block numeric analysis."
+  ],
+  "pipeline": [
+    {
+      "stage": "A",
+      "name": "Input normalize",
+      "output": "normalized image"
+    },
+    {
+      "stage": "B",
+      "name": "Panel/plot hypotheses",
+      "providers": [
+        "manual ROI",
+        "structural grid lattice",
+        "dark panel"
+      ],
+      "policy": "rank"
+    },
+    {
+      "stage": "C",
+      "name": "Mode hypotheses",
+      "providers": [
+        "manual",
+        "Y-axis family",
+        "trace morphology"
+      ],
+      "policy": "weighted consensus"
+    },
+    {
+      "stage": "D",
+      "name": "Channel hypotheses",
+      "providers": [
+        "checkboxes",
+        "foreground color"
+      ],
+      "policy": "single checkbox > color-matched checked channel > Unknown"
+    },
+    {
+      "stage": "E",
+      "name": "Axis hypotheses",
+      "providers": [
+        "label sequence",
+        "structural major-grid",
+        "zero/baseline consensus"
+      ],
+      "policy": "family-aware consensus"
+    },
+    {
+      "stage": "F",
+      "name": "Trace hypotheses",
+      "providers": [
+        "foreground color continuity",
+        "generic bright/color"
+      ],
+      "policy": "continuity + coverage + axis consistency"
+    },
+    {
+      "stage": "G",
+      "name": "Ranges",
+      "Gain": "transition auto-detected",
+      "Noise": "Sample 0-270 / 270-500"
+    },
+    {
+      "stage": "H",
+      "name": "Numeric consensus",
+      "policy": "selected axis + selected trace; sanity guard; no fabricated fallback"
+    },
+    {
+      "stage": "I",
+      "name": "SPEC",
+      "policy": "only after mode and numeric values are accepted"
+    }
+  ],
+  "mode_rules": {
+    "manual": "authoritative",
+    "auto": {
+      "min_margin": 0.12,
+      "unknown_allowed": true
+    }
+  },
+  "channel_rules": {
+    "single_checked": "authoritative",
+    "multiple_checked": "foreground color must match one checked channel, otherwise Unknown",
+    "none_checked": "Unknown",
+    "channel_failure_blocks_numeric": false
+  },
+  "numeric_rules": {
+    "Noise": {
+      "low_sample": [
+        0,
+        270
+      ],
+      "high_sample": [
+        270,
+        500
+      ],
+      "spec_low": [
+        0,
+        0.015
+      ],
+      "spec_high": [
+        0.001,
+        0.02
+      ]
+    },
+    "Gain": {
+      "ranges": "auto transition",
+      "spec_high": [
+        1.0,
+        1.5
+      ]
+    },
+    "reject_if": [
+      "axis reversed",
+      "outside displayed scale",
+      "trace/axis inconsistent"
+    ]
+  }
+}

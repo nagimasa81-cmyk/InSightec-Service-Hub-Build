@@ -1,0 +1,16 @@
+Energy Graph Scan - Unified Analysis Contract v2.0
+
+This package uses the same analysis contract as the paired iPhone/Windows build.
+Pipeline:
+1. Energy per Band panel detection
+2. Plot-grid geometry confirmation
+3. Channel checkbox resolution
+4. Single foreground trace isolation
+5. Gain/Noise mode resolution
+6. Horizontal region resolution (Gain=automatic plateaus; Noise=Sample#270)
+7. Measured Y-axis grid calibration
+8. Pixel-to-value conversion
+9. SPEC decision
+
+Fail-safe rule: no numeric result / no SPEC result is produced when ROI/plot/foreground/mode/Y calibration is unresolved.
+Overlay rule: Low/High lines are drawn from measured trace pixel positions, not recreated from numeric values.

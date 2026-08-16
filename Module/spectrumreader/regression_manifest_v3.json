@@ -1,0 +1,53 @@
+[
+  {
+    "id": "gain_ch0_reference",
+    "file": "Gain_verification_ch0.JPG",
+    "mode": "Gain",
+    "channel": "0",
+    "low": 0.19,
+    "high": 1.11,
+    "status": "legacy-reference"
+  },
+  {
+    "id": "gain_ch1_reference",
+    "file": "Gain_verification_ch1.JPG",
+    "mode": "Gain",
+    "channel": "1",
+    "low": 0.19,
+    "high": 1.15,
+    "status": "legacy-reference"
+  },
+  {
+    "id": "noise_ch0_reference",
+    "file": "Noise_verification_ch0.JPG",
+    "mode": "Noise",
+    "channel": "0",
+    "low": 0.0036,
+    "high": 0.0175,
+    "status": "legacy-reference"
+  },
+  {
+    "id": "noise_ch1_reference",
+    "file": "Noise_verification_ch1.JPG",
+    "mode": "Noise",
+    "channel": "1",
+    "low": 0.0028,
+    "high": 0.0126,
+    "status": "legacy-reference"
+  },
+  {
+    "id": "multiple_checked_policy",
+    "mode": "any",
+    "rule": "foreground color must match a checked channel else Unknown"
+  },
+  {
+    "id": "noise_range_policy",
+    "mode": "Noise",
+    "rule": "Low Sample#0-270, High Sample#270-500"
+  },
+  {
+    "id": "gain_range_policy",
+    "mode": "Gain",
+    "rule": "auto-detect transition; no fixed 270 split"
+  }
+]

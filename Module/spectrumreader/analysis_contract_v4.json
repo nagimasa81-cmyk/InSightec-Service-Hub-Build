@@ -1,0 +1,14 @@
+{
+  "contract_version": "4.0",
+  "name": "Energy Graph Scan Vision-style Axis Reasoning",
+  "rules": {
+    "channel": "Exactly one checked channel => confirm it. Multiple checked => confirm only if foreground trace color maps to one of selected channels; otherwise Unknown. Unknown never blocks analysis.",
+    "manual_mode": "Manual Gain/Noise is authoritative. Axis OCR from the opposite family is forbidden from overriding manual mode.",
+    "auto_mode": "Auto compares Gain and Noise as separate hypotheses using trace shape + Y-axis numeric-label series + grid-step consistency. Axis OCR may correct Auto only when decisively stronger.",
+    "axis": "Never assume lowest gridline is zero. Read visible left Y-axis numeric labels. Require label order and value-step to agree with major-grid spacing. Two or more anchors preferred; one-anchor fallback is low-confidence only.",
+    "gain": "Gain Low/High uses automatic plateau/transition detection with stable-outer-plateau fallback. No fixed x split.",
+    "noise": "Noise Low/High uses semantic Sample#270 positional split with a transition exclusion margin; amplitude separation is not required.",
+    "overlay": "Overlay lines are drawn from measured trace pixels, not from values converted back to pixels.",
+    "numeric_safety": "If axis reasoning is not trustworthy, retain trace/channel/mode/overlay but withhold numeric Low/High and SPEC rather than output misleading values."
+  }
+}

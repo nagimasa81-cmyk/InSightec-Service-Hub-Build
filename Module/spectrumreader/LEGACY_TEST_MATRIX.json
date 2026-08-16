@@ -1,0 +1,167 @@
+[
+  {
+    "test": "test_analysis_core_v2.js",
+    "status": "PASS",
+    "output": "Analysis Core v2 architecture regression PASS"
+  },
+  {
+    "test": "test_auto_roi_shared_v301.js",
+    "status": "PASS",
+    "output": "v3.0.1 shared Auto ROI regression PASS"
+  },
+  {
+    "test": "test_axis_family_visual.js",
+    "status": "PASS",
+    "output": "Axis visual-family regression PASS"
+  },
+  {
+    "test": "test_axis_guard.js",
+    "status": "PASS",
+    "output": "Axis contradiction guard regression PASS"
+  },
+  {
+    "test": "test_axis_reasoning.js",
+    "status": "PASS",
+    "output": "iPhone vision-axis policy regression PASS"
+  },
+  {
+    "test": "test_black_frame_first_v302.js",
+    "status": "PASS",
+    "output": "v3.0.3 dark-rectangle compatibility PASS"
+  },
+  {
+    "test": "test_canonical_v400.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_dark_rectangle_v303.js",
+    "status": "PASS",
+    "output": "v3.0.3 dark rectangle boundary regression PASS"
+  },
+  {
+    "test": "test_deterministic_frame_v410.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_direct_glyph_axis.js",
+    "status": "PASS",
+    "output": "Direct-glyph axis regression PASS"
+  },
+  {
+    "test": "test_direct_noise_v203.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_exact_roi_pixels.js",
+    "status": "PASS",
+    "output": "Exact ROI -> v2 plot-context contract PASS"
+  },
+  {
+    "test": "test_geometry_noise_axis_v402.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_grid_ordinal_axis.js",
+    "status": "PASS",
+    "output": "Grid ordinal zero-origin regression PASS"
+  },
+  {
+    "test": "test_guide_first_v304.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_manual_failsafe_v411.js",
+    "status": "PASS",
+    "output": "v4.1.2 manual fail-safe regression PASS"
+  },
+  {
+    "test": "test_manual_plot_bypass_v405.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_manual_roi_authoritative_v401.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_noise_axis_authoritative_v407.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_noise_axis_series_v2.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_noise_dense_lower_band_v406.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_noise_direct_authoritative_v404.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_noise_grid_lattice_v202.js",
+    "status": "PASS",
+    "output": "v2.0.2 structural Noise grid regression PASS"
+  },
+  {
+    "test": "test_noise_ranges.js",
+    "status": "PASS",
+    "output": "Noise positional Low/High regression PASS"
+  },
+  {
+    "test": "test_noise_region_cloud_v412.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_noise_zero_grid_v403.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_robust_core_v3.js",
+    "status": "PASS",
+    "output": "Robust Core v3 iPhone policy PASS"
+  },
+  {
+    "test": "test_roi_invariance_v408.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_safari_stable_pixels_v501.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_v204_roi_noise.js",
+    "status": "FAIL",
+    "output": "Node.js v22.16.0"
+  },
+  {
+    "test": "test_v500_signal_geometry.js",
+    "status": "PASS",
+    "output": "v5.0.0 signal geometry regression PASS"
+  },
+  {
+    "test": "test_v502_imagedata_safari.js",
+    "status": "PASS",
+    "output": "v5.0.2 Safari ImageData regression PASS"
+  },
+  {
+    "test": "test_zero_row_consensus.js",
+    "status": "PASS",
+    "output": "Zero-row consensus regression PASS"
+  }
+]

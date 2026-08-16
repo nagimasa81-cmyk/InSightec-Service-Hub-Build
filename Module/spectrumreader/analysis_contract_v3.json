@@ -1,0 +1,28 @@
+{
+  "contract": "EnergyGraphScan Unified Analysis v3",
+  "version": 3,
+  "pipeline": [
+    "energy_panel",
+    "plot_geometry",
+    "channel_candidates",
+    "foreground_trace",
+    "mode_resolution",
+    "x_regions",
+    "y_axis_numeric_labels",
+    "numeric_conversion",
+    "spec"
+  ],
+  "rules": {
+    "gain_x": "auto-detect stable Low / transition / High; no fixed horizontal split",
+    "noise_x": "Sample#270 split",
+    "channel": "one checked checkbox wins; multiple checked -> use foreground color only when it belongs to checked set",
+    "foreground": "calculate front-most visible trace only; never average underlying traces",
+    "y_axis": "read visible numeric labels on the left Y axis. >=2 labels: fit scale+intercept. 1 label: anchor value + measured major-grid spacing. 0 labels: no numeric result/SPEC.",
+    "occlusion": "missing/hidden Y labels are allowed; use only readable anchors",
+    "forbidden": [
+      "never assume lowest major gridline is zero",
+      "never use grid count to classify Gain/Noise"
+    ],
+    "failure": "if Y numeric anchors cannot establish calibration, return no numeric result and no SPEC decision"
+  }
+}

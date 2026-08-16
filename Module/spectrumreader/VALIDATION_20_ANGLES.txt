@@ -1,0 +1,43 @@
+Energy Graph Scan iPhone v5.0.2 — 20-angle validation
+=======================================================
+
+PASS 01 JS source uses ImageData snapshot :: PASS
+PASS 02 Analyze restore uses putImageData :: PASS
+PASS 03 No HTMLImage fallback in redrawSource :: PASS
+PASS 04 File URL revoked after useImage :: PASS
+PASS 05 Camera URL revoked after useImage :: PASS
+PASS 06 Manual path has local prepare before stable snap :: PASS
+PASS 07 Manual fallback exists :: PASS
+PASS 08 Stable panel failure is non-fatal :: PASS
+PASS 09 Sample split is exactly 270/500 :: 270
+PASS 10 Noise equal Low/High is allowed :: {"low":0.007999062499999996,"high":0.008000280373831771,"confidence":0.9825454545454548,"splitSample":270,"splitX":269.46,"marginPx":15,"lowRange":{"x0":0,"x1":254.45999999999998},"highRange":{"x0":284.46,"x1":499},"diagnostics":{"left_n":128,"right_n":107,"left_spread":0.00011999999999999858,"right_spread":0.00011999999999999858,"separation":0,"coverage":1,"stability":0.9454545454545461,"separation_required":false}}
+PASS 11 Noise Low/High different levels :: {"low":0.0060000000000000045,"high":0.01600000000000001,"confidence":1,"splitSample":270,"splitX":269.46,"marginPx":15,"lowRange":{"x0":0,"x1":254.45999999999998},"highRange":{"x0":284.46,"x1":499},"diagnostics":{"left_n":255,"right_n":215,"left_spread":0,"right_spread":0,"separation":0.01,"coverage":1,"stability":1,"separation_required":false}}
+PASS 12 Noise not forced to zero :: {"low":0.004499999999999973,"high":0.01299999999999994,"confidence":1,"splitSample":270,"splitX":269.46,"marginPx":15,"lowRange":{"x0":0,"x1":254.45999999999998},"highRange":{"x0":284.46,"x1":499},"diagnostics":{"left_n":255,"right_n":215,"left_spread":0,"right_spread":0,"separation":0.0085,"coverage":1,"stability":1,"separation_required":false}}
+PASS 13 Sparse upward spikes rejected :: {"low":0.004999999999999982,"high":0.013999999999999941,"confidence":1,"splitSample":270,"splitX":269.46,"marginPx":15,"lowRange":{"x0":0,"x1":254.45999999999998},"highRange":{"x0":284.46,"x1":499},"diagnostics":{"left_n":248,"right_n":209,"left_spread":0,"right_spread":0,"separation":0.009000000000000001,"coverage":1,"stability":1,"separation_required":false}}
+PASS 14 Downward outliers rejected :: {"low":0.0069999999999999585,"high":0.015000000000000019,"confidence":1,"splitSample":270,"splitX":269.46,"marginPx":15,"lowRange":{"x0":0,"x1":254.45999999999998},"highRange":{"x0":284.46,"x1":499},"diagnostics":{"left_n":248,"right_n":209,"left_spread":0,"right_spread":0,"separation":0.008,"coverage":1,"stability":1,"separation_required":false}}
+PASS 15 Different width 300 px :: {"low":0.0060000000000000045,"high":0.01400000000000001,"confidence":1,"splitSample":270,"splitX":161.46,"marginPx":9,"lowRange":{"x0":0,"x1":152.46},"highRange":{"x0":170.46,"x1":299},"diagnostics":{"left_n":153,"right_n":129,"left_spread":0,"right_spread":0,"separation":0.008,"coverage":1,"stability":1,"separation_required":false}}
+PASS 16 Different width 900 px :: {"low":0.0064999999999999685,"high":0.015499999999999967,"confidence":1,"splitSample":270,"splitX":485.46,"marginPx":27,"lowRange":{"x0":0,"x1":458.46},"highRange":{"x0":512.46,"x1":899},"diagnostics":{"left_n":230,"right_n":193,"left_spread":0,"right_spread":0,"separation":0.009000000000000001,"coverage":1,"stability":1,"separation_required":false}}
+PASS 17 Uneven sampling density Low/High :: {"low":0.006000000000000004,"high":0.01500000000000002,"confidence":1,"splitSample":270,"splitX":269.46,"marginPx":15,"lowRange":{"x0":0,"x1":254.45999999999998},"highRange":{"x0":284.46,"x1":499},"diagnostics":{"left_n":64,"right_n":215,"left_spread":0,"right_spread":0,"separation":0.009,"coverage":1,"stability":1,"separation_required":false}}
+PASS 18 Signal cannot define zero in v5 :: PASS
+PASS 19 Grid-only Noise axis is present :: PASS
+PASS 20 Dominant signal population path is present :: PASS
+SUMMARY 20/20 PASS
+
+Validation scope:
+- Safari/ImageData lifecycle guards
+- Auto/manual ROI execution ordering
+- non-fatal stable-panel recovery
+- Sample#270/500 split contract
+- Noise equal Low/High behavior
+- non-zero Low signal preservation
+- high/low level separation
+- upward/downward outlier resistance
+- width scaling 300/500/900 px
+- uneven sampling density
+- removal of signal-derived zero assumptions
+- grid-only Noise Y-axis presence
+- dominant signal-population path presence
+
+Important limitation:
+This is deterministic source/runtime-core validation in the execution environment.
+It is not a substitute for 20 physical captures on the user's exact iPhone/Safari build.
