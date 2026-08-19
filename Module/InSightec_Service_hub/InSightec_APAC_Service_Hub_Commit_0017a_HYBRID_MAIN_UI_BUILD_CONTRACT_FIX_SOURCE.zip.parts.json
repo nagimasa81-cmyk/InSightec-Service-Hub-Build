@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "source_zip": "InSightec_APAC_Service_Hub_Commit_0017a_HYBRID_MAIN_UI_BUILD_CONTRACT_FIX_SOURCE.zip",
+  "source_size": 45555644,
+  "source_sha256": "1866300a6dc17c2575749c12ee84fb03cc0d17ed59d77e097c40612a72ceef0b",
+  "part_size_bytes": 25000000,
+  "parts": [
+    {
+      "name": "InSightec_APAC_Service_Hub_Commit_0017a_HYBRID_MAIN_UI_BUILD_CONTRACT_FIX_SOURCE.zip.part001",
+      "size": 25000000,
+      "sha256": "bacef52298e8bbd40410b9b2ce77cce2ce86928befef975d7a3e84922dbdf630"
+    },
+    {
+      "name": "InSightec_APAC_Service_Hub_Commit_0017a_HYBRID_MAIN_UI_BUILD_CONTRACT_FIX_SOURCE.zip.part002",
+      "size": 20555644,
+      "sha256": "6b69999b683a38b660a033d360a85057b495d5a5a0af32bd46730c01b505aab5"
+    }
+  ]
+}
