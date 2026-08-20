@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "format": "insightec-source-split-v1",
+  "source_name": "InSightec_APAC_Service_Hub_Commit_0017d_HYBRID_FUS_BUILD_FIX_SOURCE.zip",
+  "source_zip": "InSightec_APAC_Service_Hub_Commit_0017d_HYBRID_FUS_BUILD_FIX_SOURCE.zip",
+  "source_size": 45557417,
+  "source_sha256": "ddc426ff4de22eba72932a470d5f1628629036b24fa9d5862866e1b4de2d88fe",
+  "part_size": 25000000,
+  "parts": [
+    {
+      "name": "InSightec_APAC_Service_Hub_Commit_0017d_HYBRID_FUS_BUILD_FIX_SOURCE.zip.part001",
+      "size": 25000000,
+      "sha256": "b8f1ae9f828fa33e23ce7feed175a4f6bba9b56077436090f96fcc1ad0520a5c"
+    },
+    {
+      "name": "InSightec_APAC_Service_Hub_Commit_0017d_HYBRID_FUS_BUILD_FIX_SOURCE.zip.part002",
+      "size": 20557417,
+      "sha256": "128565fa82f0decc9e5a021c838b250253bf78f5789b6e4d22b208df32543710"
+    }
+  ]
+}
