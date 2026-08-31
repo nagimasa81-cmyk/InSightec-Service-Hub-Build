@@ -1,0 +1,2358 @@
+name: Build selected module - V9L Strict Soni Identity / Fresh Cache Epoch
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_target:
+        description: "Build target"
+        required: true
+        type: choice
+        default: module
+        options:
+          - module
+          - service_hub
+      hub_style:
+        description: "Service Hub style (used only when Build target = service_hub)"
+        required: true
+        type: choice
+        default: hybrid
+        options:
+          - hybrid
+          - zip_drop
+          - card_launcher
+      module_name:
+        description: "Standalone module (used only when Build target = module)"
+        required: true
+        type: choice
+        default: Soni
+        options:
+          - Complaint_service_hub
+          - DO_Analysis
+          - Water_system_analyzer
+          - Log_explorer
+          - FFT
+          - trackerSNR
+          - VIMeasure
+          - Soni
+          - reader
+      include_sonication:
+        description: "Include Sonication Analysis in Service Hub (used only when Build target = service_hub)"
+        required: true
+        type: choice
+        default: include
+        options:
+          - include
+          - exclude
+      include_complaint:
+        description: "Include Complaint Service Hub in Service Hub (used only when Build target = service_hub)"
+        required: true
+        type: choice
+        default: include
+        options:
+          - include
+          - exclude
+      guide_mode:
+        description: "Guide and guided tour"
+        required: true
+        type: choice
+        default: with_guide
+        options:
+          - with_guide
+          - without_guide
+      build_mode:
+        description: "Reuse a matching completed build, or force a new build"
+        required: true
+        type: choice
+        default: force_rebuild
+        options:
+          - force_rebuild
+          - reuse_existing
+
+permissions:
+  contents: read
+
+concurrency:
+  group: selected-${{ inputs.build_target }}-${{ inputs.module_name }}-${{ inputs.hub_style }}-${{ inputs.include_sonication }}-${{ inputs.include_complaint }}-${{ inputs.guide_mode }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+  INPUT_BUILD_TARGET: ${{ inputs.build_target }}
+  INPUT_REQUESTED_MODULE: ${{ inputs.module_name }}
+  INPUT_GUIDE_MODE: ${{ inputs.guide_mode }}
+  INPUT_HUB_VARIANT: ${{ inputs.hub_style }}
+  INPUT_INCLUDE_SONICATION: ${{ inputs.include_sonication }}
+  INPUT_INCLUDE_COMPLAINT: ${{ inputs.include_complaint }}
+  INPUT_BUILD_MODE: ${{ inputs.build_mode }}
+
+jobs:
+  resolve:
+    name: Resolve build selection
+    runs-on: ubuntu-latest
+    outputs:
+      module_name: ${{ steps.resolve.outputs.module_name }}
+      python_version: ${{ steps.resolve.outputs.python_version }}
+      runtime: ${{ steps.resolve.outputs.runtime }}
+      cache_tag: ${{ steps.resolve.outputs.cache_tag }}
+      guide_enabled: ${{ steps.resolve.outputs.guide_enabled }}
+      hub_variant: ${{ steps.resolve.outputs.hub_variant }}
+      builder_hub_variant: ${{ steps.resolve.outputs.builder_hub_variant }}
+      build_signature: ${{ steps.resolve.outputs.build_signature }}
+      source_zip_name: ${{ steps.resolve.outputs.source_zip_name }}
+      include_sonication: ${{ steps.resolve.outputs.include_sonication }}
+      include_complaint: ${{ steps.resolve.outputs.include_complaint }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: resolve
+        name: Resolve Registry, SOURCE ZIP and cache signature
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path.cwd()
+          registry = json.loads((root / "config/module_registry.json").read_text(encoding="utf-8"))
+
+          target = os.environ["INPUT_BUILD_TARGET"]
+          module_name = "InSightec_Service_hub" if target == "service_hub" else os.environ["INPUT_REQUESTED_MODULE"]
+          if module_name not in registry["modules"]:
+              raise SystemExit(f"Registry module not found: {module_name}")
+
+          # Top-level target invariant: module_name input must be ignored for Hub builds.
+          if target == "service_hub" and module_name != "InSightec_Service_hub":
+              raise SystemExit(
+                  f"Top-level Hub target invariant failed: {module_name!r}; "
+                  "expected 'InSightec_Service_hub'"
+              )
+
+          module_dir = root / "Module" / module_name
+
+          def sha256_file(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def _split_part_number(path: Path, source_name: str) -> int | None:
+              prefix = source_name + ".part"
+              if not path.name.startswith(prefix):
+                  return None
+              suffix = path.name[len(prefix):]
+              return int(suffix) if suffix.isdigit() else None
+
+          def _discover_split_groups(directory: Path):
+              groups = {}
+              for part in directory.glob("*.zip.part*"):
+                  if "SOURCE" not in part.name.upper() or not part.is_file():
+                      continue
+                  marker = part.name.lower().rfind(".zip.part")
+                  if marker < 0:
+                      continue
+                  source_name = part.name[:marker + 4]
+                  number = _split_part_number(part, source_name)
+                  if number is None:
+                      continue
+                  groups.setdefault(source_name, []).append((number, part))
+              return groups
+
+          def _validate_part_sequence(source_name: str, numbered_parts):
+              numbered_parts = sorted(numbered_parts, key=lambda item: item[0])
+              numbers = [number for number, _ in numbered_parts]
+              expected = list(range(1, len(numbers) + 1))
+              if numbers != expected:
+                  raise SystemExit(
+                      f"Split SOURCE parts for {source_name} are not contiguous: "
+                      f"found {numbers}, expected {expected}"
+                  )
+              return [path for _, path in numbered_parts]
+
+          def _reassemble_without_manifest(directory: Path, source_name: str, parts):
+              import zipfile
+
+              source_zip = directory / source_name
+              digest = hashlib.sha256()
+              total_size = 0
+              with source_zip.open("wb") as output_zip:
+                  for part_path in parts:
+                      with part_path.open("rb") as input_part:
+                          for chunk in iter(lambda: input_part.read(1024 * 1024), b""):
+                              digest.update(chunk)
+                              output_zip.write(chunk)
+                              total_size += len(chunk)
+              try:
+                  with zipfile.ZipFile(source_zip, "r") as archive:
+                      entries = archive.infolist()
+                      if not entries:
+                          raise SystemExit(f"Reassembled SOURCE ZIP is empty: {source_zip.name}")
+              except Exception as exc:
+                  source_zip.unlink(missing_ok=True)
+                  raise SystemExit(f"Reassembled SOURCE ZIP is invalid: {source_zip.name}: {exc}") from exc
+              actual_sha = digest.hexdigest().lower()
+              print(
+                  f"Reassembled split SOURCE without manifest: {source_zip.name} "
+                  f"from {len(parts)} part(s), {total_size} bytes, sha256={actual_sha}"
+              )
+              return source_zip, actual_sha
+
+          def _zip_root_names(path: Path) -> set[str]:
+              import zipfile
+              with zipfile.ZipFile(path, "r") as archive:
+                  bad = archive.testzip()
+                  if bad:
+                      raise RuntimeError(f"CRC failure: {bad}")
+                  return set(archive.namelist())
+
+          def _is_hub_source_zip(path: Path) -> tuple[bool, list[str]]:
+              """Identify Service Hub SOURCE by internal content, never by filename alone."""
+              required = {
+                  "InSightecServiceHub.py",
+                  "Build_Hub_EXE.py",
+                  "Build_Integrated_Tools.py",
+                  "Fast_Preflight_All_Tools.py",
+              }
+              try:
+                  names = _zip_root_names(path)
+              except Exception as exc:
+                  return False, [f"invalid zip: {exc}"]
+              missing = sorted(required - names)
+              return not missing, missing
+
+          def resolve_hub_source_by_content(directory: Path):
+              """Auto-discover exactly one valid Hub SOURCE from ZIP contents."""
+              candidates = sorted(
+                  [p for p in directory.glob("*.zip") if p.is_file()],
+                  key=lambda p: (p.stat().st_mtime_ns, p.name.lower()),
+                  reverse=True,
+              )
+
+              valid = []
+              rejected = []
+              for path in candidates:
+                  ok, details = _is_hub_source_zip(path)
+                  if ok:
+                      valid.append(path)
+                      print(f"[HUB SOURCE CANDIDATE] PASS: {path.name}")
+                  elif "SOURCE" in path.name.upper():
+                      rejected.append((path.name, details))
+                      print(f"[HUB SOURCE CANDIDATE] reject: {path.name}; missing={details}")
+
+              # Prefer the newest valid Hub SOURCE. This supports normal iterative
+              # commits while refusing Soni/FFT/etc. ZIPs regardless of filename.
+              if valid:
+                  chosen = valid[0]
+                  print(f"[PASS] Auto-selected Hub SOURCE by content: {chosen.name}")
+                  return chosen, sha256_file(chosen)
+
+              # Split-source fallback: inspect each exact .zip.part family by
+              # temporary reassembly, validate Hub markers, and keep only Hub content.
+              split_groups = _discover_split_groups(directory)
+              valid_split = []
+              for source_name, numbered_parts in split_groups.items():
+                  parts = _validate_part_sequence(source_name, numbered_parts)
+                  temp_zip = directory / source_name
+                  created = not temp_zip.exists()
+                  try:
+                      rebuilt, actual_sha = _reassemble_without_manifest(directory, source_name, parts)
+                      ok, details = _is_hub_source_zip(rebuilt)
+                      if ok:
+                          valid_split.append((rebuilt, actual_sha))
+                          print(f"[HUB SPLIT CANDIDATE] PASS: {source_name}")
+                      else:
+                          print(f"[HUB SPLIT CANDIDATE] reject: {source_name}; missing={details}")
+                  finally:
+                      # Keep a valid selected reconstruction available for later steps;
+                      # rejected temporary reconstructions can be removed.
+                      pass
+
+              if valid_split:
+                  valid_split.sort(
+                      key=lambda item: (item[0].stat().st_mtime_ns, item[0].name.lower()),
+                      reverse=True,
+                  )
+                  chosen, actual_sha = valid_split[0]
+                  print(f"[PASS] Auto-selected split Hub SOURCE by content: {chosen.name}")
+                  return chosen, actual_sha
+
+              visible = [p.name for p in candidates if "SOURCE" in p.name.upper()]
+              raise SystemExit(
+                  "No valid Service Hub SOURCE was found by content. "
+                  "A Hub SOURCE must contain InSightecServiceHub.py, Build_Hub_EXE.py, "
+                  "Build_Integrated_Tools.py, and Fast_Preflight_All_Tools.py. "
+                  f"Visible SOURCE ZIPs: {visible}"
+              )
+
+          def resolve_source_zip(directory: Path):
+              # Normal mode: exactly one committed SOURCE ZIP.
+              source_zips = sorted(
+                  [p for p in directory.glob("*.zip") if "SOURCE" in p.name.upper()],
+                  key=lambda p: p.name.lower(),
+              )
+              split_manifests = sorted(
+                  [p for p in directory.glob("*.zip.parts.json") if "SOURCE" in p.name.upper()],
+                  key=lambda p: p.name.lower(),
+              )
+              split_groups = _discover_split_groups(directory)
+
+              if source_zips and (split_manifests or split_groups):
+                  raise SystemExit(
+                      f"Ambiguous SOURCE in {directory}: both a complete SOURCE ZIP and split SOURCE parts are present. "
+                      "Keep only one representation."
+                  )
+              if len(source_zips) == 1:
+                  source_zip = source_zips[0]
+                  return source_zip, sha256_file(source_zip)
+              if len(source_zips) > 1:
+                  names = ", ".join(p.name for p in source_zips)
+                  raise SystemExit(f"Expected one SOURCE ZIP in {directory}; found {len(source_zips)}: {names}")
+
+              # Preferred split mode: manifest + parts with full size/SHA verification.
+              if len(split_manifests) == 1:
+                  manifest_path = split_manifests[0]
+                  manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                  manifest_format = str(manifest.get("format", "")).strip()
+                  manifest_schema = manifest.get("schema_version")
+                  if manifest_format != "insightec-source-split-v1" and manifest_schema != 1:
+                      raise SystemExit(
+                          f"Unsupported split SOURCE manifest: {manifest_path.name}; "
+                          f"format={manifest_format!r}, schema_version={manifest_schema!r}"
+                      )
+
+                  source_name = str(manifest.get("source_zip") or manifest.get("source_name") or "").strip()
+                  if not source_name or not source_name.lower().endswith(".zip") or "SOURCE" not in source_name.upper():
+                      raise SystemExit(
+                          f"Invalid SOURCE name in {manifest_path.name}: "
+                          f"source_zip={manifest.get('source_zip')!r}, source_name={manifest.get('source_name')!r}"
+                      )
+                  source_zip = directory / source_name
+                  parts = manifest.get("parts") or []
+                  if not parts:
+                      raise SystemExit(f"No parts listed in {manifest_path.name}")
+
+                  digest = hashlib.sha256()
+                  total_size = 0
+                  with source_zip.open("wb") as output_zip:
+                      for index, item in enumerate(parts, start=1):
+                          part_name = str(item.get("name", "")).strip()
+                          part_path = directory / part_name
+                          if not part_path.is_file():
+                              raise SystemExit(f"Missing split SOURCE part {index}: {part_name}")
+                          expected_size = int(item.get("size", -1))
+                          actual_size = part_path.stat().st_size
+                          if actual_size != expected_size:
+                              raise SystemExit(
+                                  f"Split SOURCE part size mismatch: {part_name}: expected {expected_size}, got {actual_size}"
+                              )
+                          part_digest = hashlib.sha256()
+                          with part_path.open("rb") as input_part:
+                              for chunk in iter(lambda: input_part.read(1024 * 1024), b""):
+                                  part_digest.update(chunk)
+                                  digest.update(chunk)
+                                  output_zip.write(chunk)
+                                  total_size += len(chunk)
+                          expected_part_sha = str(item.get("sha256", "")).lower()
+                          if part_digest.hexdigest().lower() != expected_part_sha:
+                              raise SystemExit(f"Split SOURCE part SHA256 mismatch: {part_name}")
+
+                  expected_total = int(manifest.get("source_size", -1))
+                  expected_sha = str(manifest.get("source_sha256", "")).lower()
+                  actual_sha = digest.hexdigest().lower()
+                  if total_size != expected_total:
+                      source_zip.unlink(missing_ok=True)
+                      raise SystemExit(
+                          f"Reassembled SOURCE size mismatch: expected {expected_total}, got {total_size}"
+                      )
+                  if actual_sha != expected_sha:
+                      source_zip.unlink(missing_ok=True)
+                      raise SystemExit(
+                          f"Reassembled SOURCE SHA256 mismatch: expected {expected_sha}, got {actual_sha}"
+                      )
+
+                  print(f"Reassembled split SOURCE: {source_zip.name} from {len(parts)} part(s)")
+                  return source_zip, actual_sha
+
+              if len(split_manifests) > 1:
+                  names = ", ".join(p.name for p in split_manifests)
+                  raise SystemExit(f"Multiple split SOURCE manifests found in {directory}: {names}")
+
+              # GitHub Web fallback: manifest is optional.  If exactly one SOURCE
+              # .zip.part001/.part002/... family exists, reconstruct it by numeric order.
+              if len(split_groups) == 1:
+                  source_name, numbered_parts = next(iter(split_groups.items()))
+                  parts = _validate_part_sequence(source_name, numbered_parts)
+                  return _reassemble_without_manifest(directory, source_name, parts)
+
+              if len(split_groups) > 1:
+                  names = ", ".join(sorted(split_groups))
+                  raise SystemExit(f"Multiple split SOURCE part families found in {directory}: {names}")
+
+              raise SystemExit(
+                  f"Expected one SOURCE ZIP, one split SOURCE manifest, or one contiguous SOURCE part family "
+                  f"in {directory}; found none"
+              )
+
+          if target == "service_hub":
+              source_zip, source_sha = resolve_hub_source_by_content(module_dir)
+          else:
+              source_zip, source_sha = resolve_source_zip(module_dir)
+
+          # A Hub artifact embeds repository module builds. Every selected component
+          # SOURCE ZIP must therefore participate in the completed-build signature.
+          component_hashes = []
+          if target == "service_hub":
+              selected_components = list(registry["workflow_selection"]["service_hub_modules"])
+              if os.environ["INPUT_INCLUDE_SONICATION"] != "include":
+                  selected_components = [name for name in selected_components if name != "Soni"]
+              if os.environ["INPUT_INCLUDE_COMPLAINT"] != "include":
+                  selected_components = [name for name in selected_components if name != "Complaint_service_hub"]
+              for component_name in selected_components:
+                  component_dir = root / "Module" / component_name
+                  # Use the same SOURCE resolver for Hub components as for the selected target.
+                  # This is critical when a component is committed as .zip.part001/.part002
+                  # instead of as one complete ZIP.
+                  component_zip, component_sha = resolve_source_zip(component_dir)
+                  component_hashes.append((component_name, component_sha))
+                  print(f"Component SOURCE : {component_name} -> {component_zip.name}")
+
+          framework_files = [root / "config/module_registry.json"]
+          framework_files += sorted((root / "scripts").rglob("*.py"))
+          framework_hash = hashlib.sha256()
+          for path in framework_files:
+              framework_hash.update(path.relative_to(root).as_posix().encode())
+              framework_hash.update(path.read_bytes())
+
+          module = registry["modules"][module_name]
+          runtime = module.get("runtime", registry["defaults"]["runtime"])
+          runtime_cfg = registry["runtimes"][runtime]
+          guide_enabled = os.environ["INPUT_GUIDE_MODE"] == "with_guide"
+          hub_variant = os.environ["INPUT_HUB_VARIANT"] if target == "service_hub" else "standalone_module"
+          # Hybrid uses the full card-launcher packaging contract so no tools are pruned,
+          # while the Hub SOURCE itself provides the combined card + ZIP-drop Home UI.
+          builder_hub_variant = "card_launcher" if hub_variant == "hybrid" else hub_variant
+          include_sonication = target != "service_hub" or os.environ["INPUT_INCLUDE_SONICATION"] == "include"
+          include_complaint = target != "service_hub" or os.environ["INPUT_INCLUDE_COMPLAINT"] == "include"
+
+          # ZIP-drop is the lightweight analyzer-only Hub variant. Complaint and
+          # guide/tour content must never be built, assembled, named, or exposed
+          # in this variant, regardless of the workflow choices shown above.
+          if target == "service_hub" and hub_variant == "zip_drop":
+              guide_enabled = False
+              include_complaint = False
+          signature_raw = "|".join([
+              module_name,
+              source_sha,
+              framework_hash.hexdigest(),
+              runtime,
+              hub_variant,
+              "guide" if guide_enabled else "no-guide",
+              "soni" if include_sonication else "no-soni",
+              "complaint" if include_complaint else "no-complaint",
+              *[f"{name}:{digest}" for name, digest in component_hashes],
+          ])
+          signature = hashlib.sha256(signature_raw.encode()).hexdigest()[:24]
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as f:
+              f.write(f"module_name={module_name}\n")
+              f.write(f"python_version={runtime_cfg['python']}\n")
+              f.write(f"runtime={runtime}\n")
+              f.write(f"cache_tag={runtime_cfg['cache_tag']}\n")
+              f.write(f"guide_enabled={'true' if guide_enabled else 'false'}\n")
+              f.write(f"hub_variant={hub_variant}\n")
+              f.write(f"builder_hub_variant={builder_hub_variant}\n")
+              f.write(f"build_signature={signature}\n")
+              f.write(f"source_zip_name={source_zip.name}\n")
+              f.write(f"include_sonication={'true' if include_sonication else 'false'}\n")
+              f.write(f"include_complaint={'true' if include_complaint else 'false'}\n")
+
+          print(f"Target          : {target}")
+          print(f"Module          : {module_name}")
+          print(f"SOURCE ZIP      : {source_zip.name}")
+          print(f"Runtime         : {runtime}")
+          print(f"Hub style       : {hub_variant}")
+          print(f"Builder variant : {builder_hub_variant}")
+          print(f"Guide           : {guide_enabled}")
+          print(f"Sonication      : {include_sonication}")
+          print(f"Complaint       : {include_complaint}")
+          print(f"Build signature : {signature}")
+
+  reuse_gate:
+    name: Fast reuse gate
+    needs: resolve
+    runs-on: windows-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - name: Restore exact completed release cache
+        id: cache
+        if: inputs.build_mode == 'reuse_existing' && !((inputs.build_target == 'module' && inputs.module_name == 'Soni') || (inputs.build_target == 'service_hub' && needs.resolve.outputs.include_sonication == 'true'))
+        uses: actions/cache/restore@v4
+        with:
+          path: .artifact-cache/${{ needs.resolve.outputs.build_signature }}
+          key: artifact-v9l-${{ runner.os }}-${{ needs.resolve.outputs.build_signature }}
+
+      - name: Validate completed cache
+        id: check
+        shell: pwsh
+        run: |
+          $root = ".artifact-cache/${{ needs.resolve.outputs.build_signature }}"
+          $metadata = Join-Path $root "cache_metadata.json"
+          $release = Join-Path $root "release"
+          $ok = $false
+          $soniStrict = (("${{ inputs.build_target }}" -eq "module" -and "${{ inputs.module_name }}" -eq "Soni") -or ("${{ inputs.build_target }}" -eq "service_hub" -and "${{ needs.resolve.outputs.include_sonication }}" -eq "true"))
+          if (-not $soniStrict -and "${{ inputs.build_mode }}" -eq "reuse_existing" -and (Test-Path $metadata) -and (Test-Path $release -PathType Container)) {
+            if ("${{ inputs.build_target }}" -eq "service_hub") {
+              $exe = Join-Path $release "InSightecServiceHub.exe"
+              $ok = (Test-Path $exe -PathType Leaf) -and ((Get-Item $exe).Length -ge 100000)
+            } else {
+              $ok = @(Get-ChildItem $release -Recurse -Filter "*.exe" -File -ErrorAction SilentlyContinue).Count -gt 0
+            }
+          }
+          "available=$($ok.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($ok) {
+            Write-Host "[FAST REUSE HIT] Heavy preflight and all builds will be skipped."
+          } else {
+            Write-Host "[REUSE MISS] Starting fail-fast pipeline."
+          }
+
+  fast_preflight:
+    name: Fast preflight before compilation
+    needs: [resolve, reuse_gate]
+    if: needs.reuse_gate.outputs.available != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      INPUT_INCLUDE_SONICATION: ${{ needs.resolve.outputs.include_sonication }}
+      INPUT_INCLUDE_COMPLAINT: ${{ needs.resolve.outputs.include_complaint }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.resolve.outputs.python_version }}
+
+
+      - name: Locate and extract Hub SOURCE by content
+        id: hub_source
+        if: inputs.build_target == 'service_hub'
+        shell: python
+        run: |
+          import json
+          import os
+          import shutil
+          import tempfile
+          import zipfile
+          from pathlib import Path
+
+          module_dir = Path("Module") / "InSightec_Service_hub"
+          target = Path("_hub_source")
+          required = {
+              "InSightecServiceHub.py",
+              "Build_Hub_EXE.py",
+              "Build_Integrated_Tools.py",
+              "Fast_Preflight_All_Tools.py",
+          }
+
+          def marker_prefix(names):
+              prefixes = None
+              for marker in required:
+                  current = set()
+                  for name in names:
+                      normalized = name.replace("\\", "/")
+                      if normalized == marker:
+                          current.add("")
+                      elif normalized.endswith("/" + marker):
+                          current.add(normalized[:-len(marker)])
+                  prefixes = current if prefixes is None else prefixes & current
+              if not prefixes:
+                  return None
+              return sorted(prefixes, key=lambda p: (len(p), p))[0]
+
+          def valid_hub_zip(path):
+              try:
+                  with zipfile.ZipFile(path, "r") as z:
+                      bad = z.testzip()
+                      if bad:
+                          return None
+                      prefix = marker_prefix(set(z.namelist()))
+                      return prefix
+              except Exception:
+                  return None
+
+          def extract_valid(path):
+              prefix = valid_hub_zip(path)
+              if prefix is None:
+                  return False
+              if target.exists():
+                  shutil.rmtree(target)
+              target.mkdir(parents=True)
+              with zipfile.ZipFile(path, "r") as z:
+                  if prefix == "":
+                      z.extractall(target)
+                  else:
+                      plen = len(prefix)
+                      for info in z.infolist():
+                          name = info.filename.replace("\\", "/")
+                          if not name.startswith(prefix):
+                              continue
+                          relative = name[plen:]
+                          if not relative:
+                              continue
+                          dest = target / relative
+                          if info.is_dir():
+                              dest.mkdir(parents=True, exist_ok=True)
+                          else:
+                              dest.parent.mkdir(parents=True, exist_ok=True)
+                              with z.open(info) as src_f, dest.open("wb") as dst_f:
+                                  shutil.copyfileobj(src_f, dst_f)
+              return True
+
+          # 1. Normal ZIP candidates. Newest valid Hub SOURCE wins.
+          valid = []
+          for path in module_dir.glob("*.zip"):
+              prefix = valid_hub_zip(path)
+              if prefix is not None:
+                  valid.append(path)
+                  print(f"[HUB SOURCE] valid ZIP: {path.name}")
+              elif "SOURCE" in path.name.upper():
+                  print(f"[HUB SOURCE] reject non-Hub ZIP: {path.name}")
+
+          if valid:
+              valid.sort(key=lambda p: (p.stat().st_mtime_ns, p.name.lower()), reverse=True)
+              chosen = valid[0]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          # Helpers for split sources.
+          def reconstruct(parts, output_zip):
+              parts = sorted(parts, key=lambda x: x[0])
+              numbers = [n for n, _ in parts]
+              if numbers != list(range(1, len(parts) + 1)):
+                  return False
+              with output_zip.open("wb") as out:
+                  for _, part in parts:
+                      with part.open("rb") as inp:
+                          shutil.copyfileobj(inp, out)
+              return output_zip.is_file()
+
+          # 2. Loose .zip.partNNN families.
+          groups = {}
+          for part in module_dir.glob("*.zip.part*"):
+              name = part.name
+              marker = name.lower().rfind(".zip.part")
+              if marker < 0:
+                  continue
+              source_name = name[:marker + 4]
+              suffix = name[marker + len(".zip.part"):]
+              if suffix.isdigit():
+                  groups.setdefault(source_name, []).append((int(suffix), part))
+
+          split_valid = []
+          for source_name, parts in groups.items():
+              output_zip = module_dir / source_name
+              created = reconstruct(parts, output_zip)
+              if created and valid_hub_zip(output_zip) is not None:
+                  split_valid.append(output_zip)
+                  print(f"[HUB SOURCE] valid loose split: {source_name}")
+              elif created:
+                  output_zip.unlink(missing_ok=True)
+
+          if split_valid:
+              split_valid.sort(key=lambda p: (p.stat().st_mtime_ns, p.name.lower()), reverse=True)
+              chosen = split_valid[0]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected split Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected loose-split Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          # 3. Packaged split ZIP: outer ZIP contains partNNN files (and optionally manifest).
+          packaged_valid = []
+          with tempfile.TemporaryDirectory() as td:
+              td = Path(td)
+              for package in module_dir.glob("*.zip"):
+                  try:
+                      with zipfile.ZipFile(package, "r") as outer:
+                          names = [n.replace("\\", "/") for n in outer.namelist()]
+                          part_names = [n for n in names if ".zip.part" in n.lower()]
+                          if not part_names:
+                              continue
+                          pkg_dir = td / package.stem
+                          pkg_dir.mkdir(parents=True, exist_ok=True)
+                          outer.extractall(pkg_dir)
+                  except Exception:
+                      continue
+
+                  pkg_groups = {}
+                  for part in pkg_dir.rglob("*.zip.part*"):
+                      name = part.name
+                      marker = name.lower().rfind(".zip.part")
+                      if marker < 0:
+                          continue
+                      source_name = name[:marker + 4]
+                      suffix = name[marker + len(".zip.part"):]
+                      if suffix.isdigit():
+                          pkg_groups.setdefault(source_name, []).append((int(suffix), part))
+
+                  for source_name, parts in pkg_groups.items():
+                      rebuilt = td / ("rebuilt_" + source_name)
+                      if reconstruct(parts, rebuilt) and valid_hub_zip(rebuilt) is not None:
+                          materialized = module_dir / source_name
+                          shutil.copy2(rebuilt, materialized)
+                          packaged_valid.append((package.stat().st_mtime_ns, package.name, materialized))
+                          print(f"[HUB SOURCE] valid packaged split: {package.name} -> {source_name}")
+
+          if packaged_valid:
+              packaged_valid.sort(key=lambda x: (x[0], x[1].lower()), reverse=True)
+              chosen = packaged_valid[0][2]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected packaged-split Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected packaged-split Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          visible = sorted(p.name for p in module_dir.iterdir() if p.is_file())
+          raise SystemExit(
+              "No valid Service Hub SOURCE found. A valid Hub SOURCE must contain "
+              "InSightecServiceHub.py, Build_Hub_EXE.py, Build_Integrated_Tools.py, "
+              f"and Fast_Preflight_All_Tools.py. Files in folder: {visible}"
+          )
+
+      - name: Repository contract audit
+        if: inputs.build_target != 'service_hub'
+        shell: pwsh
+        run: |
+          $args = @(
+            "scripts/contract_audit.py",
+            "--target", "${{ inputs.build_target }}",
+            "--selected-module", "${{ inputs.module_name }}",
+            "--report", "artifacts/contract_audit_fast.json"
+          )
+          if ("${{ needs.resolve.outputs.include_sonication }}" -ne "true") { $args += "--exclude-sonication" }
+          if ("${{ needs.resolve.outputs.include_complaint }}" -ne "true") { $args += "--exclude-complaint" }
+          # Capture contract_audit non-zero without letting PowerShell/GitHub
+          # terminate before the resolved-SOURCE guard can classify the failure.
+          $savedErrorActionPreference = $ErrorActionPreference
+          $hasNativePreference = Test-Path variable:PSNativeCommandUseErrorActionPreference
+          if ($hasNativePreference) {
+            $savedNativePreference = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $false
+          }
+          $ErrorActionPreference = "Continue"
+          & python @args
+          $legacyExit = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          $ErrorActionPreference = $savedErrorActionPreference
+          if ($hasNativePreference) {
+            $PSNativeCommandUseErrorActionPreference = $savedNativePreference
+          }
+          $resolvedSource = "${{ needs.resolve.outputs.source_zip_name }}"
+          if (-not (Test-Path "artifacts/contract_audit_fast.json")) {
+            throw "Contract audit report was not produced: artifacts/contract_audit_fast.json"
+          }
+          $audit = Get-Content "artifacts/contract_audit_fast.json" -Raw | ConvertFrom-Json
+          $realFailures = @()
+          foreach ($item in @($audit.results)) {
+            if ($item.status -ne "FAIL") { continue }
+            $details = (@($item.details) -join " | ")
+            $isStaleHubDiscovery = (
+              $item.module -eq "InSightec_Service_hub" -and
+              $item.source_zip -ne $resolvedSource -and
+              $details -match "module_folder=.*expected=InSightec_Service_hub"
+            )
+            if ($isStaleHubDiscovery) {
+              Write-Host "[WARN] Ignoring stale contract_audit SOURCE auto-discovery for Hub."
+              Write-Host "       Resolved SOURCE : $resolvedSource"
+              Write-Host "       Audited SOURCE  : $($item.source_zip)"
+              Write-Host "       Details         : $details"
+              continue
+            }
+            $realFailures += $item
+          }
+          if ($realFailures.Count -gt 0) {
+            $realFailures | ConvertTo-Json -Depth 8 | Write-Host
+            throw "Repository contract audit found $($realFailures.Count) real failure(s)."
+          }
+          if ($legacyExit -ne 0) {
+            Write-Host "[PASS] Legacy audit nonzero exit was caused only by stale Hub SOURCE auto-discovery."
+          } else {
+            Write-Host "[PASS] Repository contract audit."
+          }
+          $global:LASTEXITCODE = 0
+
+      - name: Service Hub resolved-source contract gate
+        if: inputs.build_target == 'service_hub'
+        shell: pwsh
+        run: |
+          Write-Host "[PASS] Legacy repository-wide contract_audit is intentionally skipped for Service Hub."
+          Write-Host "Resolved Hub SOURCE: ${{ steps.hub_source.outputs.source_zip_name }}"
+          Write-Host "Authoritative gates: preflight_check.py + SOURCE Fast_Preflight_All_Tools.py."
+          Write-Host "Nested/integrated tool SOURCE ZIPs are not allowed to redefine the selected Hub SOURCE."
+
+      - name: Repository preflight
+        shell: pwsh
+        run: |
+          $args = @(
+            "scripts/preflight_check.py",
+            "--module", "${{ needs.resolve.outputs.module_name }}",
+            "--source-zip", "${{ steps.hub_source.outputs.source_zip_name }}",
+            "--hub-variant", "${{ needs.resolve.outputs.builder_hub_variant }}",
+            "--report", "artifacts/preflight_fast.json"
+          )
+          if ("${{ needs.resolve.outputs.guide_enabled }}" -eq "true") { $args += "--guide" }
+          python @args
+
+      - name: All-tool fast static preflight
+        if: inputs.build_target == 'service_hub'
+        shell: pwsh
+        run: python "_hub_source/Fast_Preflight_All_Tools.py"
+
+      - name: Upload fast-preflight diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fast_Preflight_${{ github.run_number }}
+          path: |
+            artifacts/*.json
+            _hub_source/fast_preflight_report.json
+          if-no-files-found: ignore
+          compression-level: 6
+
+  tool_build:
+    name: Tool ${{ matrix.tool }}
+    needs: [resolve, reuse_gate, fast_preflight]
+    if: >-
+      needs.reuse_gate.outputs.available != 'true' &&
+      inputs.build_target == 'service_hub' &&
+      needs.fast_preflight.result == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      max-parallel: 6
+      matrix:
+        tool:
+          - do_analysis
+          - tracker_snr
+          - log_explorer
+          - sonication_analysis
+          - fus_image_explore
+          - vimeasure
+    env:
+      INPUT_INCLUDE_SONICATION: ${{ needs.resolve.outputs.include_sonication }}
+      INPUT_INCLUDE_COMPLAINT: ${{ needs.resolve.outputs.include_complaint }}
+      INSIGHTEC_ONLY_TOOL: ${{ matrix.tool }}
+    steps:
+      - name: Skip excluded Sonication
+        if: matrix.tool == 'sonication_analysis' && needs.resolve.outputs.include_sonication != 'true'
+        shell: pwsh
+        run: Write-Host "[SKIP] Sonication excluded by workflow selection."
+
+      - uses: actions/checkout@v4
+        if: matrix.tool != 'sonication_analysis' || needs.resolve.outputs.include_sonication == 'true'
+
+      - uses: actions/setup-python@v5
+        if: matrix.tool != 'sonication_analysis' || needs.resolve.outputs.include_sonication == 'true'
+        with:
+          python-version: ${{ needs.resolve.outputs.python_version }}
+
+
+      - name: Locate and extract Hub SOURCE by content
+        id: hub_source
+        if: matrix.tool != 'sonication_analysis' || needs.resolve.outputs.include_sonication == 'true'
+        shell: python
+        run: |
+          import json
+          import os
+          import shutil
+          import tempfile
+          import zipfile
+          from pathlib import Path
+
+          module_dir = Path("Module") / "InSightec_Service_hub"
+          target = Path("_hub_source")
+          required = {
+              "InSightecServiceHub.py",
+              "Build_Hub_EXE.py",
+              "Build_Integrated_Tools.py",
+              "Fast_Preflight_All_Tools.py",
+          }
+
+          def marker_prefix(names):
+              prefixes = None
+              for marker in required:
+                  current = set()
+                  for name in names:
+                      normalized = name.replace("\\", "/")
+                      if normalized == marker:
+                          current.add("")
+                      elif normalized.endswith("/" + marker):
+                          current.add(normalized[:-len(marker)])
+                  prefixes = current if prefixes is None else prefixes & current
+              if not prefixes:
+                  return None
+              return sorted(prefixes, key=lambda p: (len(p), p))[0]
+
+          def valid_hub_zip(path):
+              try:
+                  with zipfile.ZipFile(path, "r") as z:
+                      bad = z.testzip()
+                      if bad:
+                          return None
+                      prefix = marker_prefix(set(z.namelist()))
+                      return prefix
+              except Exception:
+                  return None
+
+          def extract_valid(path):
+              prefix = valid_hub_zip(path)
+              if prefix is None:
+                  return False
+              if target.exists():
+                  shutil.rmtree(target)
+              target.mkdir(parents=True)
+              with zipfile.ZipFile(path, "r") as z:
+                  if prefix == "":
+                      z.extractall(target)
+                  else:
+                      plen = len(prefix)
+                      for info in z.infolist():
+                          name = info.filename.replace("\\", "/")
+                          if not name.startswith(prefix):
+                              continue
+                          relative = name[plen:]
+                          if not relative:
+                              continue
+                          dest = target / relative
+                          if info.is_dir():
+                              dest.mkdir(parents=True, exist_ok=True)
+                          else:
+                              dest.parent.mkdir(parents=True, exist_ok=True)
+                              with z.open(info) as src_f, dest.open("wb") as dst_f:
+                                  shutil.copyfileobj(src_f, dst_f)
+              return True
+
+          # 1. Normal ZIP candidates. Newest valid Hub SOURCE wins.
+          valid = []
+          for path in module_dir.glob("*.zip"):
+              prefix = valid_hub_zip(path)
+              if prefix is not None:
+                  valid.append(path)
+                  print(f"[HUB SOURCE] valid ZIP: {path.name}")
+              elif "SOURCE" in path.name.upper():
+                  print(f"[HUB SOURCE] reject non-Hub ZIP: {path.name}")
+
+          if valid:
+              valid.sort(key=lambda p: (p.stat().st_mtime_ns, p.name.lower()), reverse=True)
+              chosen = valid[0]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          # Helpers for split sources.
+          def reconstruct(parts, output_zip):
+              parts = sorted(parts, key=lambda x: x[0])
+              numbers = [n for n, _ in parts]
+              if numbers != list(range(1, len(parts) + 1)):
+                  return False
+              with output_zip.open("wb") as out:
+                  for _, part in parts:
+                      with part.open("rb") as inp:
+                          shutil.copyfileobj(inp, out)
+              return output_zip.is_file()
+
+          # 2. Loose .zip.partNNN families.
+          groups = {}
+          for part in module_dir.glob("*.zip.part*"):
+              name = part.name
+              marker = name.lower().rfind(".zip.part")
+              if marker < 0:
+                  continue
+              source_name = name[:marker + 4]
+              suffix = name[marker + len(".zip.part"):]
+              if suffix.isdigit():
+                  groups.setdefault(source_name, []).append((int(suffix), part))
+
+          split_valid = []
+          for source_name, parts in groups.items():
+              output_zip = module_dir / source_name
+              created = reconstruct(parts, output_zip)
+              if created and valid_hub_zip(output_zip) is not None:
+                  split_valid.append(output_zip)
+                  print(f"[HUB SOURCE] valid loose split: {source_name}")
+              elif created:
+                  output_zip.unlink(missing_ok=True)
+
+          if split_valid:
+              split_valid.sort(key=lambda p: (p.stat().st_mtime_ns, p.name.lower()), reverse=True)
+              chosen = split_valid[0]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected split Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected loose-split Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          # 3. Packaged split ZIP: outer ZIP contains partNNN files (and optionally manifest).
+          packaged_valid = []
+          with tempfile.TemporaryDirectory() as td:
+              td = Path(td)
+              for package in module_dir.glob("*.zip"):
+                  try:
+                      with zipfile.ZipFile(package, "r") as outer:
+                          names = [n.replace("\\", "/") for n in outer.namelist()]
+                          part_names = [n for n in names if ".zip.part" in n.lower()]
+                          if not part_names:
+                              continue
+                          pkg_dir = td / package.stem
+                          pkg_dir.mkdir(parents=True, exist_ok=True)
+                          outer.extractall(pkg_dir)
+                  except Exception:
+                      continue
+
+                  pkg_groups = {}
+                  for part in pkg_dir.rglob("*.zip.part*"):
+                      name = part.name
+                      marker = name.lower().rfind(".zip.part")
+                      if marker < 0:
+                          continue
+                      source_name = name[:marker + 4]
+                      suffix = name[marker + len(".zip.part"):]
+                      if suffix.isdigit():
+                          pkg_groups.setdefault(source_name, []).append((int(suffix), part))
+
+                  for source_name, parts in pkg_groups.items():
+                      rebuilt = td / ("rebuilt_" + source_name)
+                      if reconstruct(parts, rebuilt) and valid_hub_zip(rebuilt) is not None:
+                          materialized = module_dir / source_name
+                          shutil.copy2(rebuilt, materialized)
+                          packaged_valid.append((package.stat().st_mtime_ns, package.name, materialized))
+                          print(f"[HUB SOURCE] valid packaged split: {package.name} -> {source_name}")
+
+          if packaged_valid:
+              packaged_valid.sort(key=lambda x: (x[0], x[1].lower()), reverse=True)
+              chosen = packaged_valid[0][2]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected packaged-split Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected packaged-split Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          visible = sorted(p.name for p in module_dir.iterdir() if p.is_file())
+          raise SystemExit(
+              "No valid Service Hub SOURCE found. A valid Hub SOURCE must contain "
+              "InSightecServiceHub.py, Build_Hub_EXE.py, Build_Integrated_Tools.py, "
+              f"and Fast_Preflight_All_Tools.py. Files in folder: {visible}"
+          )
+
+      - name: Overlay repository Sonication SOURCE into Hub
+        if: matrix.tool == 'sonication_analysis' && needs.resolve.outputs.include_sonication == 'true'
+        shell: python
+        run: |
+          import json
+          import shutil
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          module_dir = Path("Module") / "Soni"
+          candidates = sorted(
+              [p for p in module_dir.glob("*.zip") if "SOURCE" in p.name.upper()],
+              key=lambda p: p.name.lower(),
+          )
+          if len(candidates) != 1:
+              names = ", ".join(p.name for p in candidates) or "<none>"
+              raise SystemExit(
+                  "Repository Sonication SOURCE lock requires exactly one complete SOURCE ZIP in "
+                  f"{module_dir}; found {len(candidates)}: {names}. Remove obsolete SOURCE ZIPs."
+              )
+          source_zip = candidates[0]
+          with zipfile.ZipFile(source_zip, "r") as z:
+              names = {n.replace("\\", "/") for n in z.namelist()}
+              required = {"main.py", "VERSION", "version.json", "insightec_build_contract.json"}
+              missing = sorted(x for x in required if x not in names)
+              if missing:
+                  raise SystemExit(f"Invalid Sonication SOURCE {source_zip.name}; missing: {missing}")
+              version = z.read("VERSION").decode("utf-8", errors="replace").strip()
+              version_json = json.loads(z.read("version.json").decode("utf-8"))
+              contract = json.loads(z.read("insightec_build_contract.json").decode("utf-8"))
+              if version_json.get("version") != version:
+                  raise SystemExit(f"VERSION/version.json mismatch in {source_zip.name}")
+              if str(contract.get("source_version", "")).lower() != version.lower():
+                  raise SystemExit(f"VERSION/build contract mismatch in {source_zip.name}")
+              if contract.get("module_folder") != "Soni":
+                  raise SystemExit(f"Wrong module contract in {source_zip.name}: {contract.get('module_folder')!r}")
+
+              sys.path.insert(0, str(Path("_hub_source").resolve()))
+              from Build_Integrated_Tools import TOOLS
+              spec = next(x for x in TOOLS if x.tool_id == "sonication_analysis")
+              target = Path("_hub_source") / "integrated_sources" / spec.source_dir
+              if target.exists():
+                  shutil.rmtree(target)
+              target.mkdir(parents=True, exist_ok=True)
+              z.extractall(target)
+
+          forbidden=[p for p in target.rglob("*") if p.is_file() and (p.suffix.lower() in {".pyc",".pyo"} or "__pycache__" in p.parts)]
+          if forbidden:
+              raise SystemExit("STRICT SONI IDENTITY: generated Python cache files are forbidden in SOURCE: " + ", ".join(str(p) for p in forbidden[:10]))
+          print(f"[PASS] Hub Sonication locked to repository SOURCE: {source_zip.name} / {version}")
+
+      - name: Compute per-tool source signature
+        id: sig
+        if: matrix.tool != 'sonication_analysis' || needs.resolve.outputs.include_sonication == 'true'
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = (Resolve-Path "_hub_source").Path
+          @'
+          import os
+          from pathlib import Path
+          from Build_Integrated_Tools import TOOLS, tool_source_signature
+
+          tool_id = os.environ["INSIGHTEC_ONLY_TOOL"]
+          spec = next(x for x in TOOLS if x.tool_id == tool_id)
+          root = Path("_hub_source").resolve()
+          sig = tool_source_signature(spec, root / "integrated_sources" / spec.source_dir)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+              f.write(f"signature={sig}\n")
+          print(f"Tool signature: {tool_id} -> {sig}")
+          '@ | python -
+
+      - name: Restore/save exact per-tool runtime cache
+        if: matrix.tool != 'sonication_analysis' || needs.resolve.outputs.include_sonication == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .module-cache/integrated-tools/${{ matrix.tool }}
+          key: inttool-v9l-${{ runner.os }}-${{ matrix.tool }}-${{ steps.sig.outputs.signature }}
+
+      - name: Build or restore this tool only
+        if: matrix.tool != 'sonication_analysis' || needs.resolve.outputs.include_sonication == 'true'
+        shell: pwsh
+        env:
+          INSIGHTEC_MODULE_CACHE: ${{ github.workspace }}\.module-cache\integrated-tools
+        run: |
+          New-Item -ItemType Directory -Force -Path "_tool_stage" | Out-Null
+          python "_hub_source/Build_Integrated_Tools.py" "_hub_source" "_tool_stage"
+
+      - name: Validate matrix runtime
+        if: matrix.tool != 'sonication_analysis' || needs.resolve.outputs.include_sonication == 'true'
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          report = json.loads(Path("_tool_stage/tool_build_status.json").read_text(encoding="utf-8"))
+          ready = [x for x in report["tools"] if x.get("tool_id") == "${{ matrix.tool }}" and x.get("status") == "ready"]
+          if len(ready) != 1:
+              raise SystemExit(f"Expected one ready runtime for ${{ matrix.tool }}; got {ready}")
+          exe = Path("_tool_stage") / ready[0]["target_exe"]
+          if not exe.is_file() or exe.stat().st_size < 100000:
+              raise SystemExit(f"Invalid runtime EXE: {exe}")
+          print(f"[PASS] ${{ matrix.tool }}: {exe} ({exe.stat().st_size:,} bytes)")
+
+
+  build:
+    name: Final Hub assembly / restore ${{ needs.resolve.outputs.module_name }}
+    needs: [resolve, reuse_gate, fast_preflight, tool_build]
+    if: >-
+      always() &&
+      needs.resolve.result == 'success' &&
+      needs.reuse_gate.result == 'success' &&
+      (
+        needs.reuse_gate.outputs.available == 'true' ||
+        (
+          needs.fast_preflight.result == 'success' &&
+          (inputs.build_target != 'service_hub' || needs.tool_build.result == 'success')
+        )
+      )
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      INPUT_MODULE_NAME: ${{ needs.resolve.outputs.module_name }}
+      INPUT_MODULE_GUIDE: ${{ needs.resolve.outputs.guide_enabled }}
+      INPUT_HUB_VARIANT: ${{ needs.resolve.outputs.builder_hub_variant }}
+      INPUT_CACHE_SIGNATURE: ${{ needs.resolve.outputs.build_signature }}
+      INPUT_INCLUDE_SONICATION: ${{ needs.resolve.outputs.include_sonication }}
+      INPUT_INCLUDE_COMPLAINT: ${{ needs.resolve.outputs.include_complaint }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enforce top-level build target contract
+        shell: pwsh
+        run: |
+          $requestedTarget = "${{ inputs.build_target }}"
+          $resolvedModule = "${{ needs.resolve.outputs.module_name }}"
+          $hubStyle = "${{ needs.resolve.outputs.hub_variant }}"
+
+          Write-Host "Requested target : $requestedTarget"
+          Write-Host "Resolved module  : $resolvedModule"
+          Write-Host "Hub style        : $hubStyle"
+
+          if ($requestedTarget -eq "service_hub") {
+            if ($resolvedModule -ne "InSightec_Service_hub") {
+              throw "TOP-LEVEL TARGET VIOLATION: service_hub resolved to '$resolvedModule'. Expected InSightec_Service_hub."
+            }
+            if ($hubStyle -notin @("hybrid", "zip_drop", "card_launcher")) {
+              throw "TOP-LEVEL TARGET VIOLATION: invalid Hub style '$hubStyle'."
+            }
+            Write-Host "[PASS] Service Hub target is locked to InSightec_Service_hub."
+          } else {
+            Write-Host "[PASS] Standalone module mode: $resolvedModule"
+          }
+
+      - name: Restore exact completed release cache
+        id: artifact_cache
+        if: inputs.build_mode == 'reuse_existing' && !((inputs.build_target == 'module' && inputs.module_name == 'Soni') || (inputs.build_target == 'service_hub' && needs.resolve.outputs.include_sonication == 'true'))
+        uses: actions/cache/restore@v4
+        with:
+          path: .artifact-cache/${{ needs.resolve.outputs.build_signature }}
+          key: artifact-v9l-${{ runner.os }}-${{ needs.resolve.outputs.build_signature }}
+
+      - name: Check exact reusable release
+        id: reusable
+        shell: pwsh
+        run: |
+          $cacheRoot = ".artifact-cache/${{ needs.resolve.outputs.build_signature }}"
+          $metadata = Join-Path $cacheRoot "cache_metadata.json"
+          $release = Join-Path $cacheRoot "release"
+          $canReuse = $false
+
+          $soniStrict = (("${{ inputs.build_target }}" -eq "module" -and "${{ inputs.module_name }}" -eq "Soni") -or ("${{ inputs.build_target }}" -eq "service_hub" -and "${{ needs.resolve.outputs.include_sonication }}" -eq "true"))
+          if (-not $soniStrict -and "${{ inputs.build_mode }}" -eq "reuse_existing" -and (Test-Path $metadata) -and (Test-Path $release -PathType Container)) {
+            if ("${{ inputs.build_target }}" -eq "service_hub") {
+              $hubExe = Join-Path $release "InSightecServiceHub.exe"
+              $canReuse = (Test-Path $hubExe -PathType Leaf) -and ((Get-Item $hubExe).Length -ge 100000)
+            } else {
+              $canReuse = @(Get-ChildItem $release -Recurse -Filter "*.exe" -File -ErrorAction SilentlyContinue).Count -gt 0
+            }
+          }
+
+          "available=$($canReuse.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($canReuse) {
+            "artifact_path=$release" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "============================================================"
+            Write-Host "[FAST REUSE HIT] Exact completed release restored."
+            Write-Host "Signature: ${{ needs.resolve.outputs.build_signature }}"
+            Write-Host "SOURCE extraction, audit, preflight, dependencies and ALL builds will be skipped."
+            Write-Host "============================================================"
+          } else {
+            Write-Host "[REUSE MISS] No valid exact completed release. Incremental build path will run."
+          }
+
+
+      - name: Locate and extract Hub SOURCE by content
+        id: hub_source
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: python
+        run: |
+          import json
+          import os
+          import shutil
+          import tempfile
+          import zipfile
+          from pathlib import Path
+
+          module_dir = Path("Module") / "InSightec_Service_hub"
+          target = Path("_hub_source")
+          required = {
+              "InSightecServiceHub.py",
+              "Build_Hub_EXE.py",
+              "Build_Integrated_Tools.py",
+              "Fast_Preflight_All_Tools.py",
+          }
+
+          def marker_prefix(names):
+              prefixes = None
+              for marker in required:
+                  current = set()
+                  for name in names:
+                      normalized = name.replace("\\", "/")
+                      if normalized == marker:
+                          current.add("")
+                      elif normalized.endswith("/" + marker):
+                          current.add(normalized[:-len(marker)])
+                  prefixes = current if prefixes is None else prefixes & current
+              if not prefixes:
+                  return None
+              return sorted(prefixes, key=lambda p: (len(p), p))[0]
+
+          def valid_hub_zip(path):
+              try:
+                  with zipfile.ZipFile(path, "r") as z:
+                      bad = z.testzip()
+                      if bad:
+                          return None
+                      prefix = marker_prefix(set(z.namelist()))
+                      return prefix
+              except Exception:
+                  return None
+
+          def extract_valid(path):
+              prefix = valid_hub_zip(path)
+              if prefix is None:
+                  return False
+              if target.exists():
+                  shutil.rmtree(target)
+              target.mkdir(parents=True)
+              with zipfile.ZipFile(path, "r") as z:
+                  if prefix == "":
+                      z.extractall(target)
+                  else:
+                      plen = len(prefix)
+                      for info in z.infolist():
+                          name = info.filename.replace("\\", "/")
+                          if not name.startswith(prefix):
+                              continue
+                          relative = name[plen:]
+                          if not relative:
+                              continue
+                          dest = target / relative
+                          if info.is_dir():
+                              dest.mkdir(parents=True, exist_ok=True)
+                          else:
+                              dest.parent.mkdir(parents=True, exist_ok=True)
+                              with z.open(info) as src_f, dest.open("wb") as dst_f:
+                                  shutil.copyfileobj(src_f, dst_f)
+              return True
+
+          # 1. Normal ZIP candidates. Newest valid Hub SOURCE wins.
+          valid = []
+          for path in module_dir.glob("*.zip"):
+              prefix = valid_hub_zip(path)
+              if prefix is not None:
+                  valid.append(path)
+                  print(f"[HUB SOURCE] valid ZIP: {path.name}")
+              elif "SOURCE" in path.name.upper():
+                  print(f"[HUB SOURCE] reject non-Hub ZIP: {path.name}")
+
+          if valid:
+              valid.sort(key=lambda p: (p.stat().st_mtime_ns, p.name.lower()), reverse=True)
+              chosen = valid[0]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          # Helpers for split sources.
+          def reconstruct(parts, output_zip):
+              parts = sorted(parts, key=lambda x: x[0])
+              numbers = [n for n, _ in parts]
+              if numbers != list(range(1, len(parts) + 1)):
+                  return False
+              with output_zip.open("wb") as out:
+                  for _, part in parts:
+                      with part.open("rb") as inp:
+                          shutil.copyfileobj(inp, out)
+              return output_zip.is_file()
+
+          # 2. Loose .zip.partNNN families.
+          groups = {}
+          for part in module_dir.glob("*.zip.part*"):
+              name = part.name
+              marker = name.lower().rfind(".zip.part")
+              if marker < 0:
+                  continue
+              source_name = name[:marker + 4]
+              suffix = name[marker + len(".zip.part"):]
+              if suffix.isdigit():
+                  groups.setdefault(source_name, []).append((int(suffix), part))
+
+          split_valid = []
+          for source_name, parts in groups.items():
+              output_zip = module_dir / source_name
+              created = reconstruct(parts, output_zip)
+              if created and valid_hub_zip(output_zip) is not None:
+                  split_valid.append(output_zip)
+                  print(f"[HUB SOURCE] valid loose split: {source_name}")
+              elif created:
+                  output_zip.unlink(missing_ok=True)
+
+          if split_valid:
+              split_valid.sort(key=lambda p: (p.stat().st_mtime_ns, p.name.lower()), reverse=True)
+              chosen = split_valid[0]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected split Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected loose-split Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          # 3. Packaged split ZIP: outer ZIP contains partNNN files (and optionally manifest).
+          packaged_valid = []
+          with tempfile.TemporaryDirectory() as td:
+              td = Path(td)
+              for package in module_dir.glob("*.zip"):
+                  try:
+                      with zipfile.ZipFile(package, "r") as outer:
+                          names = [n.replace("\\", "/") for n in outer.namelist()]
+                          part_names = [n for n in names if ".zip.part" in n.lower()]
+                          if not part_names:
+                              continue
+                          pkg_dir = td / package.stem
+                          pkg_dir.mkdir(parents=True, exist_ok=True)
+                          outer.extractall(pkg_dir)
+                  except Exception:
+                      continue
+
+                  pkg_groups = {}
+                  for part in pkg_dir.rglob("*.zip.part*"):
+                      name = part.name
+                      marker = name.lower().rfind(".zip.part")
+                      if marker < 0:
+                          continue
+                      source_name = name[:marker + 4]
+                      suffix = name[marker + len(".zip.part"):]
+                      if suffix.isdigit():
+                          pkg_groups.setdefault(source_name, []).append((int(suffix), part))
+
+                  for source_name, parts in pkg_groups.items():
+                      rebuilt = td / ("rebuilt_" + source_name)
+                      if reconstruct(parts, rebuilt) and valid_hub_zip(rebuilt) is not None:
+                          materialized = module_dir / source_name
+                          shutil.copy2(rebuilt, materialized)
+                          packaged_valid.append((package.stat().st_mtime_ns, package.name, materialized))
+                          print(f"[HUB SOURCE] valid packaged split: {package.name} -> {source_name}")
+
+          if packaged_valid:
+              packaged_valid.sort(key=lambda x: (x[0], x[1].lower()), reverse=True)
+              chosen = packaged_valid[0][2]
+              if not extract_valid(chosen):
+                  raise SystemExit(f"Selected packaged-split Hub ZIP failed extraction validation: {chosen}")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+                  f.write(f"source_zip_name={chosen.name}\n")
+              print(f"[PASS] Auto-selected packaged-split Hub SOURCE by content: {chosen.name}")
+              raise SystemExit(0)
+
+          visible = sorted(p.name for p in module_dir.iterdir() if p.is_file())
+          raise SystemExit(
+              "No valid Service Hub SOURCE found. A valid Hub SOURCE must contain "
+              "InSightecServiceHub.py, Build_Hub_EXE.py, Build_Integrated_Tools.py, "
+              f"and Fast_Preflight_All_Tools.py. Files in folder: {visible}"
+          )
+      - name: Overlay repository Sonication SOURCE into final Hub assembly
+        id: final_soni_overlay
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub' && needs.resolve.outputs.include_sonication == 'true'
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import shutil
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          module_dir = Path("Module") / "Soni"
+          candidates = sorted(
+              [p for p in module_dir.glob("*.zip") if "SOURCE" in p.name.upper()],
+              key=lambda p: p.name.lower(),
+          )
+          if len(candidates) != 1:
+              names = ", ".join(p.name for p in candidates) or "<none>"
+              raise SystemExit(
+                  "STRICT SONI IDENTITY: expected exactly one complete SOURCE ZIP in "
+                  f"{module_dir}; found {len(candidates)}: {names}. Remove obsolete SOURCE ZIPs."
+              )
+
+          source_zip = candidates[0]
+          source_sha = hashlib.sha256(source_zip.read_bytes()).hexdigest()
+          with zipfile.ZipFile(source_zip, "r") as z:
+              names = {n.replace("\\", "/") for n in z.namelist()}
+              required = {"main.py", "VERSION", "version.json", "insightec_build_contract.json"}
+              missing = sorted(x for x in required if x not in names)
+              if missing:
+                  raise SystemExit(f"Invalid Sonication SOURCE {source_zip.name}; missing: {missing}")
+              version = z.read("VERSION").decode("utf-8", errors="replace").strip()
+              version_json = json.loads(z.read("version.json").decode("utf-8"))
+              contract = json.loads(z.read("insightec_build_contract.json").decode("utf-8"))
+              if version_json.get("version") != version:
+                  raise SystemExit(f"VERSION/version.json mismatch in {source_zip.name}")
+              if str(contract.get("source_version", "")).lower() != version.lower():
+                  raise SystemExit(f"VERSION/build contract mismatch in {source_zip.name}")
+              if contract.get("module_folder") != "Soni":
+                  raise SystemExit(f"Wrong module contract in {source_zip.name}: {contract.get('module_folder')!r}")
+
+              sys.path.insert(0, str(Path("_hub_source").resolve()))
+              from Build_Integrated_Tools import TOOLS
+              spec = next(x for x in TOOLS if x.tool_id == "sonication_analysis")
+              target = Path("_hub_source") / "integrated_sources" / spec.source_dir
+              if target.exists():
+                  shutil.rmtree(target)
+              target.mkdir(parents=True, exist_ok=True)
+              z.extractall(target)
+
+          installed_version = (target / "VERSION").read_text(encoding="utf-8").strip()
+          if installed_version != version:
+              raise SystemExit(
+                  f"STRICT SONI IDENTITY: final Hub overlay failed: {installed_version!r} != {version!r}"
+              )
+          with Path(__import__('os').environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+              f.write(f"version={version}\n")
+              f.write(f"source_zip={source_zip.name}\n")
+              f.write(f"source_sha={source_sha}\n")
+          print("============================================================")
+          print(f"[PASS] FINAL HUB SONICATION SOURCE LOCK: {source_zip.name}")
+          print(f"       Version : {version}")
+          print(f"       SHA256  : {source_sha}")
+          print(f"       Target  : {target}")
+          print("============================================================")
+
+      - name: Reassemble split SOURCE ZIP if required
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target != 'service_hub'
+        shell: python
+        env:
+          SOURCE_ZIP_NAME: ${{ steps.hub_source.outputs.source_zip_name || needs.resolve.outputs.source_zip_name }}
+        run: |
+          import hashlib
+          import json
+          import os
+          import zipfile
+          from pathlib import Path
+
+          root = Path.cwd()
+          module_dir = root / "Module" / os.environ["INPUT_MODULE_NAME"]
+          source_zip = module_dir / os.environ["SOURCE_ZIP_NAME"]
+          manifest_path = module_dir / f"{source_zip.name}.parts.json"
+
+          if source_zip.is_file():
+              print(f"Complete SOURCE ZIP already present: {source_zip.name}")
+              raise SystemExit(0)
+
+          def part_number(path: Path):
+              prefix = source_zip.name + ".part"
+              if not path.name.startswith(prefix):
+                  return None
+              suffix = path.name[len(prefix):]
+              return int(suffix) if suffix.isdigit() else None
+
+          if manifest_path.is_file():
+              manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+              manifest_format = str(manifest.get("format", "")).strip()
+              manifest_schema = manifest.get("schema_version")
+              if manifest_format != "insightec-source-split-v1" and manifest_schema != 1:
+                  raise SystemExit(
+                      f"Unsupported split SOURCE manifest: {manifest_path.name}; "
+                      f"format={manifest_format!r}, schema_version={manifest_schema!r}"
+                  )
+              manifest_source_name = str(manifest.get("source_zip") or manifest.get("source_name") or "").strip()
+              if manifest_source_name != source_zip.name:
+                  raise SystemExit(
+                      f"Split manifest source name mismatch: {manifest_source_name!r} != {source_zip.name!r}"
+                  )
+
+              digest = hashlib.sha256()
+              total_size = 0
+              with source_zip.open("wb") as output_zip:
+                  for index, item in enumerate(manifest.get("parts") or [], start=1):
+                      part_name = str(item.get("name", "")).strip()
+                      part_path = module_dir / part_name
+                      if not part_path.is_file():
+                          raise SystemExit(f"Missing split SOURCE part {index}: {part_name}")
+                      expected_size = int(item.get("size", -1))
+                      if part_path.stat().st_size != expected_size:
+                          raise SystemExit(f"Split SOURCE part size mismatch: {part_name}")
+                      part_digest = hashlib.sha256()
+                      with part_path.open("rb") as input_part:
+                          for chunk in iter(lambda: input_part.read(1024 * 1024), b""):
+                              part_digest.update(chunk)
+                              digest.update(chunk)
+                              output_zip.write(chunk)
+                              total_size += len(chunk)
+                      if part_digest.hexdigest().lower() != str(item.get("sha256", "")).lower():
+                          raise SystemExit(f"Split SOURCE part SHA256 mismatch: {part_name}")
+
+              expected_size = int(manifest.get("source_size", -1))
+              expected_sha = str(manifest.get("source_sha256", "")).lower()
+              actual_sha = digest.hexdigest().lower()
+              if total_size != expected_size or actual_sha != expected_sha:
+                  source_zip.unlink(missing_ok=True)
+                  raise SystemExit(
+                      f"Reassembled SOURCE verification failed: size {total_size}/{expected_size}, "
+                      f"sha256 {actual_sha}/{expected_sha}"
+                  )
+              print(f"Reassembled and verified split SOURCE: {source_zip.name}")
+          else:
+              numbered = []
+              for part in module_dir.glob(f"{source_zip.name}.part*"):
+                  number = part_number(part)
+                  if number is not None:
+                      numbered.append((number, part))
+              numbered.sort(key=lambda item: item[0])
+              numbers = [number for number, _ in numbered]
+              expected = list(range(1, len(numbers) + 1))
+              if not numbered or numbers != expected:
+                  raise SystemExit(
+                      f"SOURCE ZIP is missing and no valid manifest/contiguous part family was found for {source_zip.name}; "
+                      f"parts={numbers}"
+                  )
+
+              digest = hashlib.sha256()
+              total_size = 0
+              with source_zip.open("wb") as output_zip:
+                  for _, part_path in numbered:
+                      with part_path.open("rb") as input_part:
+                          for chunk in iter(lambda: input_part.read(1024 * 1024), b""):
+                              digest.update(chunk)
+                              output_zip.write(chunk)
+                              total_size += len(chunk)
+              try:
+                  with zipfile.ZipFile(source_zip, "r") as archive:
+                      entries = archive.infolist()
+                      if not entries:
+                          raise RuntimeError("ZIP contains no entries")
+              except Exception as exc:
+                  source_zip.unlink(missing_ok=True)
+                  raise SystemExit(f"Reassembled SOURCE ZIP is invalid: {exc}") from exc
+              print(
+                  f"Reassembled split SOURCE without manifest: {source_zip.name} from {len(numbered)} part(s), "
+                  f"{total_size} bytes, sha256={digest.hexdigest()}"
+              )
+
+      - uses: actions/setup-python@v5
+        if: steps.reusable.outputs.available != 'true'
+        with:
+          python-version: ${{ needs.resolve.outputs.python_version }}
+          cache: pip
+          cache-dependency-path: |
+            Module/**/*.zip
+            Module/**/*.zip.part*
+            Module/**/*.zip.parts.json
+            config/module_registry.json
+
+      - name: Audit required fixed module contracts
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target != 'service_hub'
+        shell: pwsh
+        run: |
+          $auditArgs = @(
+            "scripts/contract_audit.py",
+            "--target", "${{ inputs.build_target }}",
+            "--selected-module", "${{ inputs.module_name }}",
+            "--report", "artifacts/contract_audit.json"
+          )
+          if ("${{ needs.resolve.outputs.include_sonication }}" -ne "true") { $auditArgs += "--exclude-sonication" }
+          if ("${{ needs.resolve.outputs.include_complaint }}" -ne "true") { $auditArgs += "--exclude-complaint" }
+          # Capture contract_audit non-zero without letting PowerShell/GitHub
+          # terminate before the resolved-SOURCE guard can classify the failure.
+          $savedErrorActionPreference = $ErrorActionPreference
+          $hasNativePreference = Test-Path variable:PSNativeCommandUseErrorActionPreference
+          if ($hasNativePreference) {
+            $savedNativePreference = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $false
+          }
+          $ErrorActionPreference = "Continue"
+          & python @auditArgs
+          $legacyExit = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          $ErrorActionPreference = $savedErrorActionPreference
+          if ($hasNativePreference) {
+            $PSNativeCommandUseErrorActionPreference = $savedNativePreference
+          }
+          $resolvedSource = "${{ steps.hub_source.outputs.source_zip_name || needs.resolve.outputs.source_zip_name }}"
+          if (-not (Test-Path "artifacts/contract_audit.json")) {
+            throw "Contract audit report was not produced: artifacts/contract_audit.json"
+          }
+          $audit = Get-Content "artifacts/contract_audit.json" -Raw | ConvertFrom-Json
+          $realFailures = @()
+          foreach ($item in @($audit.results)) {
+            if ($item.status -ne "FAIL") { continue }
+            $details = (@($item.details) -join " | ")
+            $isStaleHubDiscovery = (
+              $item.module -eq "InSightec_Service_hub" -and
+              $item.source_zip -ne $resolvedSource -and
+              $details -match "module_folder=.*expected=InSightec_Service_hub"
+            )
+            if ($isStaleHubDiscovery) {
+              Write-Host "[WARN] Ignoring stale contract_audit SOURCE auto-discovery for Hub."
+              Write-Host "       Resolved SOURCE : $resolvedSource"
+              Write-Host "       Audited SOURCE  : $($item.source_zip)"
+              Write-Host "       Details         : $details"
+              continue
+            }
+            $realFailures += $item
+          }
+          if ($realFailures.Count -gt 0) {
+            $realFailures | ConvertTo-Json -Depth 8 | Write-Host
+            throw "Repository contract audit found $($realFailures.Count) real failure(s)."
+          }
+          if ($legacyExit -ne 0) {
+            Write-Host "[PASS] Legacy audit nonzero exit was caused only by stale Hub SOURCE auto-discovery."
+          } else {
+            Write-Host "[PASS] Repository contract audit."
+          }
+          $global:LASTEXITCODE = 0
+
+      - name: Restore build acceleration caches
+        if: steps.reusable.outputs.available != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build_cache
+            .nuitka-cache
+            .builder-cache
+          key: framework-v9l-${{ runner.os }}-${{ needs.resolve.outputs.cache_tag }}-${{ needs.resolve.outputs.module_name }}-${{ hashFiles('Module/**/*.zip', 'Module/**/*.zip.part*', 'Module/**/*.zip.parts.json', 'scripts/**/*.py', 'config/module_registry.json') }}
+          restore-keys: |
+            framework-v9l-${{ runner.os }}-${{ needs.resolve.outputs.cache_tag }}-${{ needs.resolve.outputs.module_name }}-
+            framework-v9l-${{ runner.os }}-${{ needs.resolve.outputs.cache_tag }}-
+
+      - name: Service Hub final resolved-source gate
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: pwsh
+        run: |
+          Write-Host "[PASS] Final Hub assembly uses the Resolve-selected Hub SOURCE plus repository-locked Sonication overlay."
+          Write-Host "Resolved Hub SOURCE: ${{ steps.hub_source.outputs.source_zip_name || needs.resolve.outputs.source_zip_name }}"
+          Write-Host "Legacy repository-wide contract_audit auto-discovery is skipped for Service Hub."
+
+      - name: Preflight source and build contract
+        if: steps.reusable.outputs.available != 'true'
+        shell: pwsh
+        run: |
+          $args = @(
+            "scripts/preflight_check.py",
+            "--module", "${{ needs.resolve.outputs.module_name }}",
+            "--source-zip", "${{ steps.hub_source.outputs.source_zip_name || needs.resolve.outputs.source_zip_name }}",
+            "--hub-variant", "${{ needs.resolve.outputs.builder_hub_variant }}",
+            "--report", "artifacts/preflight_${{ needs.resolve.outputs.module_name }}.json"
+          )
+          if ("${{ needs.resolve.outputs.guide_enabled }}" -eq "true") { $args += "--guide" }
+          python @args
+
+      - name: Install build framework
+        if: steps.reusable.outputs.available != 'true'
+        shell: pwsh
+        run: python -m pip install --upgrade pip pyinstaller "Nuitka==4.1.3" ordered-set zstandard
+
+      - name: Resolve module dependencies
+        if: steps.reusable.outputs.available != 'true'
+        shell: pwsh
+        run: |
+          python scripts/dependency_check.py --module "${{ needs.resolve.outputs.module_name }}" --source-zip "${{ steps.hub_source.outputs.source_zip_name || needs.resolve.outputs.source_zip_name }}"
+          if ("${{ inputs.build_target }}" -eq "service_hub" -and "${{ needs.resolve.outputs.include_sonication }}" -eq "true") {
+            python scripts/dependency_check.py --module "Soni"
+          }
+          if ("${{ inputs.build_target }}" -eq "service_hub" -and "${{ needs.resolve.outputs.include_complaint }}" -eq "true") {
+            python scripts/dependency_check.py --module "Complaint_service_hub"
+          }
+
+
+      - name: Verify located Hub SOURCE for cache handoff
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: python
+        run: |
+          from pathlib import Path
+          required = [
+              "_hub_source/InSightecServiceHub.py",
+              "_hub_source/Build_Hub_EXE.py",
+              "_hub_source/Build_Integrated_Tools.py",
+              "_hub_source/Fast_Preflight_All_Tools.py",
+          ]
+          missing = [p for p in required if not Path(p).is_file()]
+          if missing:
+              raise SystemExit(f"Located Hub SOURCE is incomplete: {missing}")
+          print("[PASS] Located Hub SOURCE is ready for cache handoff.")
+
+
+      - name: Compute exact parallel tool cache signatures
+        id: tool_sigs
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = (Resolve-Path "_hub_source").Path
+          @'
+          import os
+          from pathlib import Path
+          from Build_Integrated_Tools import TOOLS, tool_source_signature
+          root = Path("_hub_source").resolve()
+          ids = {"do_analysis":"do","tracker_snr":"tracker","log_explorer":"log","sonication_analysis":"soni","fus_image_explore":"fus","vimeasure":"vim"}
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+              for spec in TOOLS:
+                  sig=tool_source_signature(spec, root / "integrated_sources" / spec.source_dir)
+                  f.write(f"{ids[spec.tool_id]}={sig}\n")
+                  print(f"{spec.tool_id}: {sig}")
+          '@ | python -
+
+      - name: Prepare clean exact tool-cache roots
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: pwsh
+        run: |
+          $roots = @(
+            ".module-cache/integrated-tools/do_analysis",
+            ".module-cache/integrated-tools/tracker_snr",
+            ".module-cache/integrated-tools/log_explorer",
+            ".module-cache/integrated-tools/sonication_analysis",
+            ".module-cache/integrated-tools/fus_image_explore",
+            ".module-cache/integrated-tools/vimeasure"
+          )
+          foreach ($root in $roots) {
+            Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $root | Out-Null
+          }
+          Write-Host "[PASS] Exact tool-cache roots cleared before restore."
+
+      - name: Restore DO Analysis runtime cache
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        uses: actions/cache/restore@v4
+        with:
+          path: .module-cache/integrated-tools/do_analysis
+          key: inttool-v9l-${{ runner.os }}-do_analysis-${{ steps.tool_sigs.outputs.do }}
+          fail-on-cache-miss: true
+      - name: Restore TrackerSNR runtime cache
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        uses: actions/cache/restore@v4
+        with:
+          path: .module-cache/integrated-tools/tracker_snr
+          key: inttool-v9l-${{ runner.os }}-tracker_snr-${{ steps.tool_sigs.outputs.tracker }}
+          fail-on-cache-miss: true
+      - name: Restore Log Explorer runtime cache
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        uses: actions/cache/restore@v4
+        with:
+          path: .module-cache/integrated-tools/log_explorer
+          key: inttool-v9l-${{ runner.os }}-log_explorer-${{ steps.tool_sigs.outputs.log }}
+          fail-on-cache-miss: true
+      - name: Restore Sonication runtime cache
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub' && needs.resolve.outputs.include_sonication == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .module-cache/integrated-tools/sonication_analysis
+          key: inttool-v9l-${{ runner.os }}-sonication_analysis-${{ steps.tool_sigs.outputs.soni }}
+          fail-on-cache-miss: true
+      - name: Restore FUS Image Explore runtime cache
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        uses: actions/cache/restore@v4
+        with:
+          path: .module-cache/integrated-tools/fus_image_explore
+          key: inttool-v9l-${{ runner.os }}-fus_image_explore-${{ steps.tool_sigs.outputs.fus }}
+          fail-on-cache-miss: true
+      - name: Restore VIMeasure runtime cache
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        uses: actions/cache/restore@v4
+        with:
+          path: .module-cache/integrated-tools/vimeasure
+          key: inttool-v9l-${{ runner.os }}-vimeasure-${{ steps.tool_sigs.outputs.vim }}
+          fail-on-cache-miss: true
+
+      - name: Verify exact cache restore layout
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: python
+        env:
+          INCLUDE_SONICATION: ${{ needs.resolve.outputs.include_sonication }}
+        run: |
+          import os
+          from pathlib import Path
+
+          tools = [
+              "do_analysis",
+              "tracker_snr",
+              "log_explorer",
+              "fus_image_explore",
+              "vimeasure",
+          ]
+          if os.environ.get("INCLUDE_SONICATION", "").lower() == "true":
+              tools.append("sonication_analysis")
+
+          root = Path(".module-cache/integrated-tools")
+          for tool_id in tools:
+              tool_root = root / tool_id
+              payloads = list(tool_root.glob("*/payload"))
+              metadata = list(tool_root.glob("*/cache_metadata.json"))
+              if len(payloads) != 1:
+                  raise SystemExit(
+                      f"[CACHE RESTORE FAIL] {tool_id}: expected exactly 1 payload, found {len(payloads)}"
+                  )
+              if len(metadata) != 1:
+                  raise SystemExit(
+                      f"[CACHE RESTORE FAIL] {tool_id}: expected exactly 1 metadata file, found {len(metadata)}"
+                  )
+              exe_count = len(list(payloads[0].rglob("*.exe")))
+              if exe_count < 1:
+                  raise SystemExit(f"[CACHE RESTORE FAIL] {tool_id}: restored payload contains no EXE")
+              print(f"[PASS] exact cache restored: {tool_id}; payload={payloads[0]}; exe_count={exe_count}")
+
+      - name: Verify final Sonication source identity before cache materialization
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub' && needs.resolve.outputs.include_sonication == 'true'
+        shell: python
+        run: |
+          from pathlib import Path
+          expected = "${{ steps.final_soni_overlay.outputs.version }}".strip()
+          if not expected:
+              raise SystemExit("STRICT SONI IDENTITY: expected version output is empty")
+          candidates = list(Path("_hub_source/integrated_sources").rglob("VERSION"))
+          matches = []
+          for p in candidates:
+              try:
+                  if p.read_text(encoding="utf-8").strip() == expected:
+                      matches.append(p)
+              except Exception:
+                  pass
+          if len(matches) != 1:
+              raise SystemExit(
+                  f"STRICT SONI IDENTITY: expected exactly one integrated Sonication VERSION={expected}; "
+                  f"found {len(matches)}: {matches}"
+              )
+          print(f"[PASS] final integrated Sonication source identity: {matches[0]} -> {expected}")
+
+      - name: Materialize exact parallel runtimes from restored cache
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: python
+        env:
+          INCLUDE_SONICATION: ${{ needs.resolve.outputs.include_sonication }}
+        run: |
+          import os, shutil
+          from pathlib import Path
+
+          mapping = {
+              "do_analysis": "DOanalysis",
+              "tracker_snr": "TrackerSNR",
+              "log_explorer": "LogExplorer",
+              "fus_image_explore": "FUSImageExplore",
+              "vimeasure": "VIMeasure",
+          }
+          if os.environ.get("INCLUDE_SONICATION", "").lower() == "true":
+              mapping["sonication_analysis"] = "SonicationAnalysis"
+
+          cache_root = Path(".module-cache/integrated-tools")
+          dst_root = Path("_prebuilt_tools")
+          if dst_root.exists():
+              shutil.rmtree(dst_root)
+          dst_root.mkdir(parents=True)
+
+          for tool_id, target_name in mapping.items():
+              tool_root = cache_root / tool_id
+              payloads = sorted(tool_root.glob("*/payload"))
+              if len(payloads) != 1:
+                  found = [str(p) for p in payloads]
+                  raise SystemExit(
+                      f"Exact cache handoff violation for {tool_id}: "
+                      f"expected 1 payload, found {len(payloads)}: {found}"
+                  )
+              dest = dst_root / target_name
+              shutil.copytree(payloads[0], dest)
+              exe_files = list(dest.rglob("*.exe"))
+              if not exe_files:
+                  raise SystemExit(f"No EXE found in materialized runtime: {dest}")
+              print(f"[PASS] exact cache handoff: {tool_id} -> {dest}")
+              for exe in exe_files:
+                  print(f"       EXE: {exe} ({exe.stat().st_size:,} bytes)")
+
+
+      - name: Hard fail if packaged Sonication EXE is stale
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub' && needs.resolve.outputs.include_sonication == 'true'
+        shell: pwsh
+        run: |
+          $expected = "${{ steps.final_soni_overlay.outputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($expected)) { throw "STRICT SONI IDENTITY: expected version is empty." }
+          $exe = "_prebuilt_tools/SonicationAnalysis/Sonication_Replay_Engine.exe"
+          if (-not (Test-Path $exe -PathType Leaf)) { throw "STRICT SONI IDENTITY: Sonication EXE missing: $exe" }
+          $info = (Get-Item $exe).VersionInfo
+          $desc = [string]$info.FileDescription
+          Write-Host "Expected Sonication version : $expected"
+          Write-Host "EXE FileDescription         : $desc"
+          if ($desc -notmatch [regex]::Escape($expected)) {
+            throw "STRICT SONI IDENTITY: stale/wrong Sonication EXE. Expected '$expected' in FileDescription, got '$desc'."
+          }
+          Write-Host "[PASS] Sonication EXE identity matches repository SOURCE: $expected"
+
+      - name: Validate parallel tool runtime set
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: python
+        env:
+          INCLUDE_SONICATION: ${{ needs.resolve.outputs.include_sonication }}
+        run: |
+          import os
+          from pathlib import Path
+
+          root = Path("_prebuilt_tools")
+          required = {
+              "DOanalysis": "DO Analysis Qt Ver1.0.1.exe",
+              "TrackerSNR": "TrackerSNR_CLEAN_EXE.exe",
+              "LogExplorer": "LogMergeTool_NoExcel.exe",
+              "FUSImageExplore": "MR_Image_Explorer_RC1.exe",
+              "VIMeasure": "VIMeasureAnalyzer.exe",
+          }
+          if os.environ.get("INCLUDE_SONICATION", "").lower() == "true":
+              required["SonicationAnalysis"] = "Sonication_Replay_Engine.exe"
+
+          missing = []
+          for directory, exe_name in required.items():
+              exe = root / directory / exe_name
+              if not exe.is_file() or exe.stat().st_size < 100_000:
+                  missing.append(str(exe))
+              else:
+                  print(f"[PASS] prebuilt runtime: {exe} ({exe.stat().st_size:,} bytes)")
+          if missing:
+              raise SystemExit("Missing/invalid prebuilt runtime(s):\n  " + "\n  ".join(missing))
+
+      - name: Cache handoff checkpoint
+        if: steps.reusable.outputs.available != 'true' && inputs.build_target == 'service_hub'
+        shell: pwsh
+        run: |
+          Write-Host "============================================================"
+          Write-Host "[PASS] EXACT TOOL CACHE HANDOFF COMPLETE"
+          Write-Host "All required parallel runtimes are materialized under _prebuilt_tools."
+          Write-Host "Starting final Hub assembly next."
+          Write-Host "============================================================"
+
+      - name: Build selected target
+        id: build
+        if: steps.reusable.outputs.available != 'true'
+        shell: pwsh
+        env:
+          INSIGHTEC_PREBUILT_TOOLS_ROOT: ${{ github.workspace }}\_prebuilt_tools
+          INSIGHTEC_EXTERNAL_TOOL_ASSEMBLY: "1"
+        run: |
+          $args = @(
+            "scripts/build_manager.py",
+            "--module", "${{ needs.resolve.outputs.module_name }}",
+            "--source-zip", "${{ steps.hub_source.outputs.source_zip_name || needs.resolve.outputs.source_zip_name }}",
+            "--hub-variant", "${{ needs.resolve.outputs.builder_hub_variant }}",
+            "--cache-signature", "${{ needs.resolve.outputs.build_signature }}"
+          )
+          if ("${{ needs.resolve.outputs.guide_enabled }}" -eq "true") { $args += "--guide" }
+          if ("${{ needs.resolve.outputs.include_sonication }}" -ne "true") { $args += "--exclude-sonication" }
+          if ("${{ needs.resolve.outputs.include_complaint }}" -ne "true") { $args += "--exclude-complaint" }
+          # Exact completed reuse is handled above. Reaching this step means
+          # a miss, so build the current SOURCE. Per-module caches still accelerate it.
+          python @args
+
+      - name: Resolve and validate final release artifact
+        id: final_artifact
+        if: success()
+        shell: pwsh
+        run: |
+          if ("${{ steps.reusable.outputs.available }}" -eq "true") {
+            $release = "${{ steps.reusable.outputs.artifact_path }}"
+            if (-not (Test-Path $release -PathType Container)) {
+              throw "FAST REUSE CONTRACT VIOLATION: cached release directory is missing."
+            }
+            if ("${{ inputs.build_target }}" -eq "service_hub") {
+              $hubExe = Join-Path $release "InSightecServiceHub.exe"
+              if (-not (Test-Path $hubExe -PathType Leaf)) {
+                throw "FAST REUSE CONTRACT VIOLATION: cached Hub EXE is missing."
+              }
+            }
+            $style = "${{ needs.resolve.outputs.hub_variant }}"
+            "artifact_name=Hub_$($style)_${{ github.run_number }}_REUSED" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "artifact_path=$release" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "[PASS] Final release comes directly from exact completed cache: $release"
+            exit 0
+          }
+
+          if ("${{ inputs.build_target }}" -eq "service_hub") {
+            # Do not trust a child-module artifact output. Resolve ONLY a directory
+            # that contains the exact Hub executable.
+            $candidates = New-Object System.Collections.Generic.List[string]
+
+            # 1) Normal fresh Hub build location, guaranteed by Build_Hub_EXE.py.
+            $candidates.Add(".build_work/InSightec_Service_hub/source/dist/InSightecServiceHub")
+
+            # 2) build_manager output, but only if it actually contains the Hub EXE.
+            $managerPath = "${{ steps.build.outputs.artifact_path }}"
+            if (-not [string]::IsNullOrWhiteSpace($managerPath)) {
+              $candidates.Add($managerPath)
+            }
+
+            # 3) Completed-build cache. reuse_existing may restore only the cached
+            # release payload rather than reconstructing source/dist.
+            $cacheRoot = ".artifact-cache/${{ needs.resolve.outputs.build_signature }}"
+            if (Test-Path $cacheRoot) {
+              Get-ChildItem $cacheRoot -Recurse -Filter "InSightecServiceHub.exe" -File -ErrorAction SilentlyContinue |
+                ForEach-Object { $candidates.Add($_.Directory.FullName) }
+            }
+
+            # 4) Last-resort exact-Hub-EXE discovery within THIS Hub work tree only.
+            if (Test-Path ".build_work/InSightec_Service_hub") {
+              Get-ChildItem ".build_work/InSightec_Service_hub" -Recurse -Filter "InSightecServiceHub.exe" -File -ErrorAction SilentlyContinue |
+                ForEach-Object { $candidates.Add($_.Directory.FullName) }
+            }
+
+            $valid = @()
+            foreach ($candidate in ($candidates | Select-Object -Unique)) {
+              if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+              $hubExe = Join-Path $candidate "InSightecServiceHub.exe"
+              if (Test-Path $hubExe -PathType Leaf) {
+                $size = (Get-Item $hubExe).Length
+                if ($size -ge 100000) {
+                  $valid += [PSCustomObject]@{
+                    Path = $candidate
+                    Exe = $hubExe
+                    Size = $size
+                  }
+                }
+              }
+            }
+
+            if ($valid.Count -eq 0) {
+              Write-Host "Hub EXE was not found in any permitted Hub location."
+              Write-Host "All EXEs under the Hub build tree:"
+              Get-ChildItem ".build_work/InSightec_Service_hub" -Recurse -Filter "*.exe" -File -ErrorAction SilentlyContinue |
+                Select-Object FullName, Length | Format-Table -AutoSize
+              throw "FINAL ARTIFACT VIOLATION: no valid InSightecServiceHub.exe was found. A child tool such as TrackerSNR must never become the top-level artifact."
+            }
+
+            # Prefer fresh source/dist, then build_manager path, then cache/search.
+            $preferred = ".build_work/InSightec_Service_hub/source/dist/InSightecServiceHub"
+            $selected = $valid | Where-Object { $_.Path -eq $preferred } | Select-Object -First 1
+            if (-not $selected -and -not [string]::IsNullOrWhiteSpace($managerPath)) {
+              $selected = $valid | Where-Object { $_.Path -eq $managerPath } | Select-Object -First 1
+            }
+            if (-not $selected) {
+              $selected = $valid | Select-Object -First 1
+            }
+
+            $hubDist = $selected.Path
+            $hubExe = $selected.Exe
+            $size = $selected.Size
+
+            # TrackerSNR is allowed only as a child tool of the selected Hub runtime.
+            $tracker = Join-Path $hubDist "tools/TrackerSNR/TrackerSNR_CLEAN_EXE.exe"
+            if (Test-Path $tracker) {
+              Write-Host "[PASS] TrackerSNR is packaged as a child tool: $tracker"
+            } else {
+              Write-Host "[WARN] TrackerSNR child EXE was not found under the selected Hub runtime."
+            }
+
+            # Strong guard: the upload root itself must contain the Hub executable.
+            if (-not (Test-Path (Join-Path $hubDist "InSightecServiceHub.exe") -PathType Leaf)) {
+              throw "FINAL ARTIFACT VIOLATION: selected upload root does not contain InSightecServiceHub.exe."
+            }
+
+            $style = "${{ needs.resolve.outputs.hub_variant }}"
+            "artifact_name=Hub_$($style)_${{ github.run_number }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "artifact_path=$hubDist" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+            Write-Host "[PASS] FINAL TOP-LEVEL ARTIFACT = InSightec APAC Service Hub"
+            Write-Host "Hub style : $style"
+            Write-Host "Hub root  : $hubDist"
+            Write-Host "Hub EXE   : $hubExe ($size bytes)"
+          } else {
+            $name = "${{ steps.build.outputs.artifact_name }}"
+            $path = "${{ steps.build.outputs.artifact_path }}"
+            if ([string]::IsNullOrWhiteSpace($path)) {
+              throw "Standalone build did not return artifact_path."
+            }
+            "artifact_name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "artifact_path=$path" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Capture build environment
+        if: always() && steps.reusable.outputs.available != 'true'
+        shell: pwsh
+        run: |
+          $outDir = "Build_Diagnostics/Environment"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          python --version 2>&1 | Tee-Object "$outDir/python_version.txt"
+          python -m pip --version 2>&1 | Tee-Object "$outDir/pip_version.txt"
+          python -m pip freeze 2>&1 | Tee-Object "$outDir/pip_freeze.txt"
+
+          $packages = @("PySide6", "shiboken6", "pyqtgraph", "numpy", "nuitka")
+          foreach ($package in $packages) {
+            $fileName = $package.ToLower() + ".txt"
+            python -m pip show $package 2>&1 | Tee-Object (Join-Path $outDir $fileName)
+          }
+
+          @'
+          import importlib.util
+          import platform
+          import sys
+
+          modules = [
+              "PySide6",
+              "PySide6.QtOpenGL",
+              "PySide6.QtOpenGLWidgets",
+              "pyqtgraph",
+              "numpy",
+              "nuitka",
+          ]
+
+          print(f"Python executable: {sys.executable}")
+          print(f"Python version: {sys.version}")
+          print(f"Platform: {platform.platform()}")
+          print()
+          for name in modules:
+              try:
+                  spec = importlib.util.find_spec(name)
+                  print(f"{name}: {'FOUND' if spec else 'MISSING'}")
+                  if spec:
+                      print(f"  origin: {spec.origin}")
+              except Exception as exc:
+                  print(f"{name}: ERROR: {type(exc).__name__}: {exc}")
+          '@ | python - | Tee-Object "$outDir/module_probe.txt"
+
+      - name: Prepare exact completed release cache
+        if: success() && inputs.build_mode == 'reuse_existing' && steps.reusable.outputs.available != 'true'
+        shell: pwsh
+        run: |
+          $cacheRoot = ".artifact-cache/${{ needs.resolve.outputs.build_signature }}"
+          $release = Join-Path $cacheRoot "release"
+          $artifactPath = "${{ steps.final_artifact.outputs.artifact_path }}"
+
+          if ([string]::IsNullOrWhiteSpace($artifactPath) -or -not (Test-Path $artifactPath -PathType Container)) {
+            throw "Cannot cache completed release: final artifact directory is missing."
+          }
+
+          Remove-Item $cacheRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $release | Out-Null
+          Copy-Item (Join-Path $artifactPath "*") -Destination $release -Recurse -Force
+
+          if ("${{ inputs.build_target }}" -eq "service_hub") {
+            $hubExe = Join-Path $release "InSightecServiceHub.exe"
+            if (-not (Test-Path $hubExe -PathType Leaf)) {
+              throw "Completed cache staging failed: InSightecServiceHub.exe missing."
+            }
+          }
+
+          @{
+            schema = "insightec.completed-release-cache.v2"
+            signature = "${{ needs.resolve.outputs.build_signature }}"
+            module = "${{ needs.resolve.outputs.module_name }}"
+            source_zip = "${{ steps.hub_source.outputs.source_zip_name || needs.resolve.outputs.source_zip_name }}"
+            hub_style = "${{ needs.resolve.outputs.hub_variant }}"
+            github_run = "${{ github.run_number }}"
+            created_utc = (Get-Date).ToUniversalTime().ToString("o")
+          } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $cacheRoot "cache_metadata.json") -Encoding utf8
+
+          Write-Host "[CACHE SAVE READY] Exact completed release staged at $release"
+
+      - name: Save completed Artifact Cache
+        if: success() && inputs.build_mode == 'reuse_existing' && steps.reusable.outputs.available != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .artifact-cache/${{ needs.resolve.outputs.build_signature }}
+          key: artifact-v9l-${{ runner.os }}-${{ needs.resolve.outputs.build_signature }}
+
+      - name: Upload release artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.final_artifact.outputs.artifact_name }}
+          # Upload the release directory directly. GitHub creates the single outer ZIP.
+          # This avoids a ZIP file inside the downloaded Artifact ZIP.
+          path: |
+            ${{ steps.final_artifact.outputs.artifact_path }}/**
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload environment snapshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build_Environment_${{ needs.resolve.outputs.module_name }}_${{ github.run_number }}
+          path: Build_Diagnostics/Environment
+          if-no-files-found: warn
+
+      - name: Prepare compact failure diagnostics
+        if: failure() || steps.reusable.outputs.available != 'true'
+        shell: pwsh
+        run: |
+          $compact = "Build_Diagnostics/Compact"
+          New-Item -ItemType Directory -Force -Path $compact | Out-Null
+
+          function Copy-SmallDiagnosticFile {
+            param(
+              [string]$Source,
+              [string]$DestinationName,
+              [int]$TailLines = 5000
+            )
+            if (-not (Test-Path $Source -PathType Leaf)) { return }
+
+            $dest = Join-Path $compact $DestinationName
+            $size = (Get-Item $Source).Length
+
+            # Keep small files intact. Large logs are reduced to their last lines,
+            # where Python/Nuitka tracebacks and final failure messages normally are.
+            if ($size -le 2MB) {
+              Copy-Item $Source $dest -Force
+            } else {
+              @(
+                "TRUNCATED DIAGNOSTIC COPY"
+                "Original: $Source"
+                "Original bytes: $size"
+                "Included: last $TailLines lines"
+                ""
+              ) | Set-Content -Path $dest -Encoding utf8
+              Get-Content $Source -Tail $TailLines -ErrorAction SilentlyContinue |
+                Add-Content -Path $dest -Encoding utf8
+            }
+          }
+
+          Copy-SmallDiagnosticFile "artifacts/build_summary.json" "build_summary.json"
+          Copy-SmallDiagnosticFile "artifacts/contract_audit.json" "contract_audit.json"
+          Copy-SmallDiagnosticFile "artifacts/preflight_${{ needs.resolve.outputs.module_name }}.json" "preflight_${{ needs.resolve.outputs.module_name }}.json"
+
+          $diagRoot = ".build_work/${{ needs.resolve.outputs.module_name }}/diagnostics"
+          if (Test-Path $diagRoot) {
+            Get-ChildItem $diagRoot -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Extension -in @(".log", ".txt", ".json") } |
+              ForEach-Object {
+                $safe = ($_.FullName.Substring((Resolve-Path $diagRoot).Path.Length).TrimStart("\") -replace '[\\/:*?"<>|]', '_')
+                Copy-SmallDiagnosticFile $_.FullName ("diagnostics_" + $safe)
+              }
+          }
+
+          $soniRoot = "artifacts/sonication"
+          if (Test-Path $soniRoot) {
+            Get-ChildItem $soniRoot -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Extension -in @(".log", ".txt", ".json") } |
+              ForEach-Object {
+                $safe = ($_.FullName.Substring((Resolve-Path $soniRoot).Path.Length).TrimStart("\") -replace '[\\/:*?"<>|]', '_')
+                Copy-SmallDiagnosticFile $_.FullName ("sonication_" + $safe)
+              }
+          }
+
+          $summary = Join-Path $compact "FAILURE_SUMMARY.txt"
+          @(
+            "Build target: ${{ inputs.build_target }}"
+            "Module: ${{ needs.resolve.outputs.module_name }}"
+            "Final artifact policy: Hub target must contain InSightecServiceHub.exe; child tool EXEs cannot become top-level artifact"
+            "Hub style: ${{ needs.resolve.outputs.hub_variant }}"
+            "Builder style: ${{ needs.resolve.outputs.builder_hub_variant }}"
+            "Build signature: ${{ needs.resolve.outputs.build_signature }}"
+            "Run: ${{ github.run_number }}"
+            ""
+          ) | Set-Content -Path $summary -Encoding utf8
+
+          if (Test-Path "artifacts/build_summary.json") {
+            try {
+              $buildSummary = Get-Content "artifacts/build_summary.json" -Raw | ConvertFrom-Json
+              if ($buildSummary.failures) {
+                foreach ($failure in $buildSummary.failures) {
+                  "FAILED MODULE: $($failure.module)" | Add-Content $summary -Encoding utf8
+                  "$($failure.error)" | Add-Content $summary -Encoding utf8
+                  "" | Add-Content $summary -Encoding utf8
+                }
+              } else {
+                "No failure entry found in build_summary.json." | Add-Content $summary -Encoding utf8
+              }
+            } catch {
+              "Could not parse build_summary.json: $($_.Exception.Message)" | Add-Content $summary -Encoding utf8
+            }
+          } else {
+            "build_summary.json was not produced." | Add-Content $summary -Encoding utf8
+          }
+
+          Write-Host "===== COMPACT FAILURE SUMMARY ====="
+          Get-Content $summary
+          Write-Host "==================================="
+
+      - name: Upload compact diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build_Diagnostics_${{ needs.resolve.outputs.module_name }}_${{ github.run_number }}
+          path: Build_Diagnostics/Compact/**
+          if-no-files-found: warn
+          compression-level: 6
