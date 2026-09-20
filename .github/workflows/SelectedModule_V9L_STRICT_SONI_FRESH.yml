@@ -55,7 +55,7 @@ on:
         description: "Guide and guided tour"
         required: true
         type: choice
-        default: with_guide
+        default: without_guide
         options:
           - with_guide
           - without_guide
