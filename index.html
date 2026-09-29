@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InSightec Service Hub</title>
+<style>
+  :root {
+    --bg: #12151a;
+    --surface: #1b1f27;
+    --border: #2a2f3a;
+    --accent: #4fd1c5;
+    --text: #e6e8eb;
+    --muted: #8a90a0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font-family: -apple-system, "Hiragino Sans", system-ui, sans-serif;
+    color: var(--text);
+    padding: 32px 18px 60px;
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 20px;
+  }
+  h2.section {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    margin: 28px 0 8px;
+    padding-left: 2px;
+  }
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  li a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  li a:active { border-color: var(--accent); }
+  li a .arrow { color: var(--accent); font-weight: 400; }
+  li .desc {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  li.disabled span.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 600;
+    opacity: 0.6;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+  }
+  .badge.live { background: rgba(79, 209, 197, 0.15); color: var(--accent); }
+  .badge.soon { background: rgba(138, 144, 160, 0.15); color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>InSightec Service Hub</h1>
+  <p class="sub">モジュール一覧</p>
+
+  <h2 class="section">公開中</h2>
+  <ul>
+    <li><a href="Module/Menshou/">麺笑飯店 支払過不足アプリ<span class="desc">Menshou</span><span class="arrow">›</span></a></li>
+    <li><a href="Module/reader/">reader<span class="arrow">›</span></a></li>
+    <li><a href="Module/spectrumreader/">spectrumreader<span class="arrow">›</span></a></li>
+  </ul>
+
+  <h2 class="section">準備中</h2>
+  <ul>
+    <li class="disabled"><span class="row">Complaint_service_hub<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">DO_Analysis<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">FFT<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">FUSSIM<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">InSightec_Service_hub<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">Log_explorer<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">MATLAB_FIG_VIEWER<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">SPC<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">Soni<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">VIMeasure<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">WS_Investigation<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">Water_system_analyzer<span class="badge soon">準備中</span></span></li>
+    <li class="disabled"><span class="row">trackerSNR<span class="badge soon">準備中</span></span></li>
+  </ul>
+</main>
+</body>
+</html>
