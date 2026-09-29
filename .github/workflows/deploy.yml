@@ -1,0 +1,61 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+env:
+  APP_DIR: Module/Menshou
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required files exist
+        run: |
+          for f in index.html style.css app.js manifest.json sw.js icons/icon-192.png icons/icon-512.png; do
+            if [ ! -f "${{ env.APP_DIR }}/$f" ]; then
+              echo "::error::必須ファイルが見つかりません: ${{ env.APP_DIR }}/$f"
+              exit 1
+            fi
+          done
+          echo "全ファイルの存在を確認しました"
+
+      - name: Assemble site (dist)
+        # Module/Menshou 配下の構成をそのまま dist 以下に再現する
+        # → 公開URLは https://<user>.github.io/<repo>/Module/Menshou/ になる
+        run: |
+          mkdir -p "dist/${{ env.APP_DIR }}"
+          cp -r "${{ env.APP_DIR }}"/. "dist/${{ env.APP_DIR }}"/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
